@@ -1,0 +1,1316 @@
+---
+title: "ASPIN Report 2024"
+author: " "
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  word_document:
+    toc: no
+    toc_depth: '3'
+    highlight: zenburn
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 3
+    theme: lumen
+    highlight: pygments
+always_allow_html: true
+---
+
+```{r, echo=F, message=F, warning=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+# 1. Change CI to binomial proportion CI
+# 2. Compare rob and specialty O-E, O/E
+# 3. Deduplicate: include encounter ID to be unique
+# 4. Investigate why .x, .y in preop/postop merge
+# cardio thoracic? how to vs.
+# O - E rather than O/E, absolute value for O/E ratio
+# histgram of o/e vs o-e bb and h 
+#Report generated for "auto-fill surgeon name"
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(arsenal)
+library(knitr)
+library(gridExtra)
+library(tidyr)
+#library(kableExtra)
+library(ggrepel)
+library(stringr)
+library(webshot2)
+library(patchwork)
+library(ggpubr)
+library(DescTools)
+library(magrittr)
+library(epiR)
+library(purrr)
+
+source("./global_vars.R")  # or using library here
+
+
+#Column 2-23 is coming from my side and it is EHR predicted probabilities and OE ratio, column 24 - 39 is coming from Michael and it is NSQIP predicted probabilities. The other columns are NSQIP variables.
+#setwd("/Users/yaxu/Library/CloudStorage/OneDrive-SharedLibraries-TheUniversityofColoradoDenver/ASPIN - ASPIN Analytic Team/OE_ratio")
+
+# mySpecialty = "Gynecological Oncology"
+# mySurgeonName = "ARRUDA, JAIME SUZANNE"
+# write.csv(newSpecialty, "data/nSpec.csv")
+# write.csv(newSurgeonName, "data/nName.csv")
+#myYear = 2020 
+
+# TODO: test
+
+mySurgeonName = read.csv(paste0(fp_processed, "nName.csv") )[1, 2]
+mySpecialty = read.csv(paste0(fp_processed, "nSpec.csv") )[1, 2]
+
+# mySpecialty = "Surgery: Thoracic"
+# mySurgeonName = "MEGUID, ROBERT ALEXANDER"
+
+# mySpecialty = "Orthopedic Surgery: Joints"
+# mySurgeonName = "HOGAN, CRAIG AUGUSTUS"
+
+
+# mySpecialty = "Dentistry"
+# mySurgeonName = "STILLE, SHEILA OGRADY"
+print_name = paste(str_split(mySurgeonName, ", ")[[1]][2], 
+                   str_split(str_split(mySurgeonName, ", ")[[1]][1], " ")[[1]][1])
+
+# Year is the most recent target report year
+myYear = 2023
+date_str1 <- "20241031_2023"
+# the following two are backup years data
+date_str2 <- "20241031_2023"
+myYear2 = c(2022, 2023)
+
+fp_processed_report1 <- paste0("../processed_data/", date_str1, "/")
+dat1 <- readRDS(paste0(fp_processed_report1,
+                    "ICD10_uni_surg_id_spec.rds"))
+#dat1 <- read.csv("/Users/yaxuzhuang/Library/CloudStorage/OneDrive-SharedLibraries-TheUniversityofColoradoDenver/ASPIN - ASPIN Analytic Team/OE_ratio/ICD10_uni_surg_id_spec.csv")
+#dat1[dat1$PrimarySurgeonName == mySurgeonName, ]$Surgical.Specialty = mySpecialty
+dat2 <- dat1[c(2,3,4,18,20,51)]
+#colnames(dat2)
+#dat5$DOS <- as.Date(dat5$SurgeryDate_asDate)
+#dat5$year <- year(dat5$DOS)
+
+datpre <- read.csv(paste0(fp_processed_report1, "preop_expected_rate.csv"))
+# View(datpre)
+# dim(datpre)
+
+
+# datpre <- readRDS("data_gen/data/preop_expected_rate_1024.rds")
+
+
+datpost <- read.csv(paste0(fp_processed_report1, "postop_observed_rate.csv"))
+# datpost <- readRDS("data_gen/data/postop_observed_rate_1024.rds")
+# View(datpost)
+# dim(datpost)
+
+
+#dat3 <- merge(dat2, datpre, by = "SurgeryID", all.x = T)
+dat4 <- merge(datpre, datpost, by = c("SurgeryID", "arb_person_id"), all = T)
+#dat4[dat4$PrimarySurgeonName == mySurgeonName, ]$Surgical.Specialty = mySpecialty
+#table(dat4$Surgical.Specialty)
+
+#dat5 <- subset(dat4, Surgical.Specialty %in% c("General Surgery", "Orthopedic Surgery", "Obstetrics and Gynecology", "Plastic Surgery", "Neurological Surgery","Otolaryngology","Urology",
+#                                                              "General Surgery", "Vascular Surgery"))
+dat5 <- dat4
+#dat5 <- merge(dat4.2, nsqip2, by = "arb_person_id", all.y = T)
+#dim(dat5)
+dat5$DOS <- as.Date(dat5$SurgeryDate)
+dat5$year <- year(dat5$DOS)
+#dat5$month <- month(dat5$DOS)
+# TODO: Only include quarters contain full months, such as remove quarter 4, if only Oct is there
+tmp_months <- unique(month(dat5$DOS)) 
+# TODO: Only include full quarters in data
+tmp_quarters <- list(
+  Q1 = c(1, 2, 3),
+  Q2 = c(4, 5, 6),
+  Q3 = c(7, 8, 9),
+  Q4 = c(10, 11, 12)
+)
+
+# Identify quarters that are not fully represented
+not_full_quarters <- which(!sapply(tmp_quarters, 
+                      function(q) all(q %in% tmp_months))) %>% as.numeric()
+
+isEmpty <- function(x) {
+    return(length(x)==0)
+}
+
+dat5$month <- quarter(dat5$DOS)
+# dat5$month <- as.factor(dat5$month)
+# TODO: make sure levels contain all 4 quarters, even may absent in the data
+dat5$month <- factor(dat5$month, levels = c(1, 2, 3, 4))
+
+# unique(dat5$month)
+
+# TODO: filter out not full quarter
+if(!isEmpty(not_full_quarters)){
+  dat5 %<>% filter(month != not_full_quarters)
+  
+  # TODO: LOAD IN predicted probability from previous year, to achieve rolling quarters
+  fp_processed_report2 <- paste0("../processed_data/", date_str2, "/")
+  datpre2 <- read.csv(paste0(fp_processed_report2, "preop_expected_rate.csv"))
+  datpost2 <- read.csv(paste0(fp_processed_report2, "postop_observed_rate.csv"))
+  dat4_2 <- merge(datpre2, datpost2, by = c("SurgeryID", "arb_person_id"), all = T)
+  # setdiff(colnames(dat4), colnames(dat4_2))
+  
+  # setdiff(colnames(dat5), colnames(dat4_2))
+  # setdiff(colnames(dat4_2), colnames(dat5))
+  
+  dat4_2$DOS <- as.Date(dat4_2$SurgeryDate)
+  dat4_2$year <- year(dat4_2$DOS)
+  dat4_2$month <- quarter(dat4_2$DOS)
+  # unique(dat4_2$year)
+  # unique(dat4_2$month)
+  # only keep the quarters needed from the last year
+  dat4_2 %<>% filter(month == not_full_quarters)
+  common_cols <- intersect(colnames(dat5), colnames(dat4_2))
+
+  # Subset both data frames to only the common columns
+  dat5_subset    <- dat5[, common_cols, drop = FALSE]
+  dat4_2_subset  <- dat4_2[, common_cols, drop = FALSE]
+
+  # Combine the subsetted data frames by rows
+  dat5 <- rbind(dat5_subset, dat4_2_subset)
+  
+}
+
+# TODO: filter by UCH 
+uch_list <- read_excel("../data/2024_10_28_UCH_surgeons_and_pivot_tables_YS.xlsx", 
+                       sheet = 6) %>%
+  dplyr::rename("specialty" = "ServiceLine",
+                "name" = "PrimarySurgeonName")
+
+# length(unique(dat5$PrimarySurgeonName))
+
+dat5 %<>% filter(PrimarySurgeonName %in% uch_list$name)
+
+dat5$ssiOE <- dat5$pred_prob_SSI_postop/dat5$pred_prob_SSI_preop
+dat5$utiOE <- dat5$pred_prob_UTI_postop/dat5$pred_prob_UTI_preop
+dat5$sepsisOE <- dat5$pred_prob_SYSEP_postop/dat5$pred_prob_SYSEP_preop
+dat5$pneuOE <- dat5$pred_prob_PNEU_postop/dat5$pred_prob_PNEU_preop
+# O: postop prob, E: preop prob
+dat5$ssiOmE <- dat5$pred_prob_SSI_postop - dat5$pred_prob_SSI_preop
+dat5$utiOmE <- dat5$pred_prob_UTI_postop - dat5$pred_prob_UTI_preop
+dat5$sepsisOmE <- dat5$pred_prob_SYSEP_postop - dat5$pred_prob_SYSEP_preop
+dat5$pneuOmE <- dat5$pred_prob_PNEU_postop - dat5$pred_prob_PNEU_preop
+
+# test
+
+# sum(dat5$Surgical.Specialty == "Burn Surgery")
+
+# sum(dat5$Surgical.Specialty == mySpecialty)
+# table(dat5$year, useNA = "ifany")
+
+# unique(dat5$year)
+
+```
+
+
+```{r, eval = FALSE}
+# ssi
+if(isEmpty(not_full_quarters)){
+rob_sub <- dat5 %>%
+  filter(year == myYear, 
+         Surgical.Specialty == mySpecialty)
+}
+
+if(!isEmpty(not_full_quarters)){
+rob_sub <- dat5 %>%
+  filter(year %in% myYear2, 
+         Surgical.Specialty == mySpecialty)
+}
+
+# unique(rob_sub$year)
+
+# glimpse(rob_sub)
+
+# dat5 %>%
+#   filter(year == myYear)
+# 
+# table(dat5$Surgical.Specialty)
+
+oe_table <- rob_sub[,c("SurgeryID", "arb_person_id", "arb_encounter_id", "ProcedureName",
+           "CuMedCptCode", "DOS", "PrimarySurgeonName" ,"Surgical.Specialty",
+           "pred_prob_SSI_postop", "pred_prob_SSI_preop", "ssiOE", "ssiOmE",
+           "pred_prob_UTI_postop", "pred_prob_UTI_preop", "utiOE", "utiOmE",
+           "pred_prob_SYSEP_postop", "pred_prob_SYSEP_preop", "sepsisOE", "sepsisOmE",
+           "pred_prob_PNEU_postop", "pred_prob_PNEU_preop", "pneuOE", "pneuOmE")]%>%
+  arrange(desc(ssiOE))
+
+colnames(oe_table) <- c("SurgeryID", "arb_person_id", "arb_encounter_id", "Procedure Name",
+           "CuMedCptCode", "Surgery Date", "Primary Surgeon Name" ,"Surgical Specialty",
+           "SSI O", "SSI E", "SSI O/E", "SSI O-E",
+           "UTI O", "UTI E", "UTI O/E", "UTI O-E",
+           "Sepsis O", "Sepsis E", "Sepsis O/E", "Sepsis O-E",
+           "Pneu O", "Pneu E", "Pneu O/E", "Pneu O-E")
+
+# View(oe_table)
+
+write.csv(oe_table, paste0(fp_processed, "OE_Table.csv"))
+
+# rob_sub$ssiOE
+# rob_sub$ssiOmE
+
+ssi1 <- rob_sub%>%
+  ggplot(aes(x = ssiOmE))+
+  geom_bar(width = 0.05)+
+  geom_vline(xintercept = 0, linetype="dashed", 
+             color = "red", size=1)
+
+ssi2 <- rob_sub%>%
+  ggplot(aes(x = ssiOE))+
+  geom_bar(width = 0.5)+
+  geom_vline(xintercept = 1, linetype="dashed", 
+             color = "red", size=1)
+
+ggarrange(ssi1, ssi2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+
+
+```{r, eval = FALSE}
+# uti
+
+uti1 <- rob_sub%>%
+  ggplot(aes(x = utiOmE))+
+  geom_bar(width = 0.05)+
+  geom_vline(xintercept = 0, linetype="dashed", 
+             color = "red", size=1)
+
+uti2 <- rob_sub%>%
+  ggplot(aes(x = utiOE))+
+  geom_bar(width = 0.5)+
+  geom_vline(xintercept = 1, linetype="dashed", 
+             color = "red", size=1)+ 
+  coord_cartesian(xlim=c(0, 50))
+
+ggarrange(uti1, uti2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+
+```{r, eval = FALSE}
+# sep
+
+sep1 <- rob_sub%>%
+  ggplot(aes(x = sepsisOmE))+
+  geom_bar(width = 0.05)+
+  geom_vline(xintercept = 0, linetype="dashed", 
+             color = "red", size=1)
+
+sep2 <- rob_sub%>%
+  ggplot(aes(x = sepsisOE))+
+  geom_bar(width = 0.5)+
+  geom_vline(xintercept = 1, linetype="dashed", 
+             color = "red", size=1)+ 
+  coord_cartesian(xlim=c(0, 30))
+
+ggarrange(sep1, sep2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+```{r, eval = FALSE}
+# pneu
+
+pneu1 <- rob_sub%>%
+  ggplot(aes(x = pneuOmE))+
+  geom_bar(width = 0.05)+
+  geom_vline(xintercept = 0, linetype="dashed", 
+             color = "red", size=1)
+
+pneu2 <- rob_sub%>%
+  ggplot(aes(x = pneuOE))+
+  geom_bar(width = 0.5)+
+  geom_vline(xintercept = 1, linetype="dashed", 
+             color = "red", size=1)+ 
+  coord_cartesian(xlim=c(0, 50))
+
+ggarrange(pneu1, pneu2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+
+```{r, eval = FALSE}
+# unique(rob_sub$month)
+
+rob_sub%>%
+  ggplot(aes(x = pred_prob_SSI_postop,  fill = month, alpha= 0.5))+
+  geom_density()
+
+rob_sub%>%
+  ggplot(aes(x = pred_prob_UTI_postop,  fill = month, alpha= 0.5))+
+  geom_density()
+
+rob_sub%>%
+  ggplot(aes(x = pred_prob_SYSEP_postop,  fill = month, alpha= 0.5))+
+  geom_density()
+
+rob_sub%>%
+  ggplot(aes(x = pred_prob_PNEU_postop,  fill = month, alpha= 0.5))+
+  geom_density()
+```
+
+
+
+```{r, echo=F, message=F, warning=FALSE}
+
+#dat5 <- subset(dat5, year == 2019)
+
+if(isEmpty(not_full_quarters)){
+  dat5 <- subset(dat5, year == myYear)
+}
+
+
+
+if(!isEmpty(not_full_quarters)){
+  dat5 <- subset(dat5, year %in% myYear2)
+}
+
+# unique(dat5$month)
+
+dat5$year_quarter <- quarter(dat5$DOS, type = "year.quarter")
+ordered_levels <- sort(unique(dat5$year_quarter))
+
+# Create concise labels using Q notation
+create_q_label <- function(yq) {
+  year_part <- floor(yq)
+  quarter_part <- round((yq - year_part) * 10)
+  
+  # Return in format Q{quarter} {year}
+  paste0("Q", quarter_part, " ", year_part)
+}
+
+# Generate labels corresponding to the sorted levels
+concise_labels <- sapply(ordered_levels, create_q_label)
+
+dat5$month <- factor(dat5$year_quarter,
+                        levels = ordered_levels,
+                        labels = concise_labels)
+
+# levels(dat5$month)
+
+# group aggregation by quarter
+dat5.5 <- dat5 %>%
+  dplyr::group_by(month) %>%
+  dplyr::summarize(
+    ssi.obs.sum = sum(pred_prob_SSI_postop, na.rm = T),
+    ssi.exp.sum = sum(pred_prob_SSI_preop, na.rm = T),
+    ssi.oe.month = ssi.obs.sum/ssi.exp.sum, # get CI for this estimate
+    ssi.med = quantile(ssiOE, 0.5, na.rm = T),
+    ssi.tfp = quantile(ssiOE, 0.25, na.rm = T),
+    ssi.sfp = quantile(ssiOE, 0.75, na.rm = T),
+    ssi.mu = mean(ssiOE, na.rm = T),
+
+    uti.obs.sum = sum(pred_prob_UTI_postop, na.rm = T),
+    uti.exp.sum = sum(pred_prob_UTI_preop, na.rm = T),
+    uti.oe.month = uti.obs.sum/uti.exp.sum,
+    uti.med = quantile(utiOE, 0.5, na.rm = T),
+    uti.tfp = quantile(utiOE, 0.25, na.rm = T),
+    uti.sfp = quantile(utiOE, 0.75, na.rm = T),
+    uti.mu = mean(utiOE, na.rm = T),
+
+    sepsis.obs.sum = sum(pred_prob_SYSEP_postop, na.rm = T),
+    sepsis.exp.sum = sum(pred_prob_SYSEP_preop, na.rm = T),
+    sepsis.oe.month = sepsis.obs.sum/sepsis.exp.sum,
+    sepsis.med = quantile(sepsisOE, 0.5, na.rm = T),
+    sepsis.tfp = quantile(sepsisOE, 0.25, na.rm = T),
+    sepsis.sfp = quantile(sepsisOE, 0.75, na.rm = T),
+    sepsis.mu = mean(sepsisOE, na.rm = T),
+
+    pneu.obs.sum = sum(pred_prob_PNEU_postop, na.rm = T),
+    pneu.exp.sum = sum(pred_prob_PNEU_preop, na.rm = T),
+    pneu.oe.month = pneu.obs.sum/pneu.exp.sum,
+    pneu.med = quantile(pneuOE, 0.5, na.rm = T),
+    pneu.tfp = quantile(pneuOE, 0.25, na.rm = T),
+    pneu.sfp = quantile(pneuOE, 0.75, na.rm = T),
+    pneu.mu = mean(pneuOE, na.rm = T),
+
+    pts = n()
+  )
+
+
+# group aggregation by quarter
+dat5.6 <- dat5 %>%
+  dplyr::group_by(month) %>%
+#  group_by(month,FacilityName) %>%
+  dplyr::summarize(
+    ssi.obs.sum = sum(pred_prob_SSI_postop, na.rm = T),
+    ssi.exp.sum = sum(pred_prob_SSI_preop, na.rm = T),
+    ssi.oe.month = ssi.obs.sum/ssi.exp.sum, # get CI for this estimate
+    ssi.med = quantile(ssiOE, 0.5, na.rm = T),
+    ssi.tfp = quantile(ssiOE, 0.25, na.rm = T),
+    ssi.sfp = quantile(ssiOE, 0.75, na.rm = T),
+    ssi.mu = mean(ssiOE, na.rm = T),
+
+    uti.obs.sum = sum(pred_prob_UTI_postop, na.rm = T),
+    uti.exp.sum = sum(pred_prob_UTI_preop, na.rm = T),
+    uti.oe.month = uti.obs.sum/uti.exp.sum,
+    uti.med = quantile(utiOE, 0.5, na.rm = T),
+    uti.tfp = quantile(utiOE, 0.25, na.rm = T),
+    uti.sfp = quantile(utiOE, 0.75, na.rm = T),
+    uti.mu = mean(utiOE, na.rm = T),
+
+    sepsis.obs.sum = sum(pred_prob_SYSEP_postop, na.rm = T),
+    sepsis.exp.sum = sum(pred_prob_SYSEP_preop, na.rm = T),
+    sepsis.oe.month = sepsis.obs.sum/sepsis.exp.sum,
+    sepsis.med = quantile(sepsisOE, 0.5, na.rm = T),
+    sepsis.tfp = quantile(sepsisOE, 0.25, na.rm = T),
+    sepsis.sfp = quantile(sepsisOE, 0.75, na.rm = T),
+    sepsis.mu = mean(sepsisOE, na.rm = T),
+
+    pneu.obs.sum = sum(pred_prob_PNEU_postop, na.rm = T),
+    pneu.exp.sum = sum(pred_prob_PNEU_preop, na.rm = T),
+    pneu.oe.month = pneu.obs.sum/pneu.exp.sum,
+    pneu.med = quantile(pneuOE, 0.5, na.rm = T),
+    pneu.tfp = quantile(pneuOE, 0.25, na.rm = T),
+    pneu.sfp = quantile(pneuOE, 0.75, na.rm = T),
+    pneu.mu = mean(pneuOE, na.rm = T),
+
+    pts = n()
+  )
+
+
+```
+
+
+``` {r, echo=F, message=F, warning=FALSE}
+# Group aggregation by specialty and quarter
+dat6 <- dat5 %>%
+  dplyr::group_by(month, Surgical.Specialty) %>%
+  dplyr::summarize(
+    ssi.obs.sum = sum(pred_prob_SSI_postop, na.rm = T),
+    ssi.exp.sum = sum(pred_prob_SSI_preop, na.rm = T),
+    ssi.oe.month = ssi.obs.sum/ssi.exp.sum,
+    ssi.med = quantile(ssiOE, 0.5, na.rm = T),
+    ssi.tfp = quantile(ssiOE, 0.25, na.rm = T),
+    ssi.sfp = quantile(ssiOE, 0.75, na.rm = T),
+    ssi.mu = mean(ssiOE, na.rm = T),
+    ssi.lowCI = ssi.oe.month - qnorm(0.975)*sqrt(ssi.oe.month) + 1,
+    ssi.upCI = ssi.oe.month + qnorm(0.975)*sqrt(ssi.oe.month) + 2,
+
+    uti.obs.sum = sum(pred_prob_UTI_postop, na.rm = T),
+    uti.exp.sum = sum(pred_prob_UTI_preop, na.rm = T),
+    uti.oe.month = uti.obs.sum/uti.exp.sum,
+    uti.med = quantile(utiOE, 0.5, na.rm = T),
+    uti.tfp = quantile(utiOE, 0.25, na.rm = T),
+    uti.sfp = quantile(utiOE, 0.75, na.rm = T),
+    uti.mu = mean(utiOE, na.rm = T),
+    uti.lowCI = uti.oe.month - qnorm(0.975)*sqrt(uti.oe.month) + 1,
+    uti.upCI = uti.oe.month + qnorm(0.975)*sqrt(uti.oe.month) + 2,
+
+    sepsis.obs.sum = sum(pred_prob_SYSEP_postop, na.rm = T),
+    sepsis.exp.sum = sum(pred_prob_SYSEP_preop, na.rm = T),
+    sepsis.oe.month = sepsis.obs.sum/sepsis.exp.sum,
+    sepsis.med = quantile(sepsisOE, 0.5, na.rm = T),
+    sepsis.tfp = quantile(sepsisOE, 0.25, na.rm = T),
+    sepsis.sfp = quantile(sepsisOE, 0.75, na.rm = T),
+    sepsis.mu = mean(sepsisOE, na.rm = T),
+    sepsis.lowCI =  sepsis.oe.month - qnorm(0.975)*sqrt(sepsis.oe.month) + 1,
+    sepsis.upCI =  sepsis.oe.month + qnorm(0.975)*sqrt(sepsis.oe.month) + 2,
+
+    pneu.obs.sum = sum(pred_prob_PNEU_postop, na.rm = T),
+    pneu.exp.sum = sum(pred_prob_PNEU_preop, na.rm = T),
+    pneu.oe.month = pneu.obs.sum/pneu.exp.sum,
+    pneu.med = quantile(pneuOE, 0.5, na.rm = T),
+    pneu.tfp = quantile(pneuOE, 0.25, na.rm = T),
+    pneu.sfp = quantile(pneuOE, 0.75, na.rm = T),
+    pneu.mu = mean(pneuOE, na.rm = T),
+    pneu.lowCI = pneu.oe.month - qnorm(0.975)*sqrt(pneu.oe.month) + 1,
+    pneu.upCI = pneu.oe.month + qnorm(0.975)*sqrt(pneu.oe.month) + 2,
+    
+    pts = n(),
+    ssi.sd = sd(pred_prob_SSI_postop),
+    uti.sd = sd(pred_prob_UTI_postop),
+    sepsis.sd = sd(pred_prob_SYSEP_postop),
+    pneu.sd = sd(pred_prob_PNEU_postop)
+  )
+
+# Group aggregation by CT surgery and then by Dr. Meguid
+dat7 <- subset(dat6, Surgical.Specialty == mySpecialty)
+surg <- subset(dat5, PrimarySurgeonName == mySurgeonName)
+surg2 <- surg %>%
+  dplyr::group_by(month) %>%
+  dplyr::summarize(
+    ssi.obs.sum = sum(pred_prob_SSI_postop, na.rm = T),
+    ssi.exp.sum = sum(pred_prob_SSI_preop, na.rm = T),
+    ssi.oe.month = ssi.obs.sum/ssi.exp.sum,
+    ssi.med = quantile(ssiOE, 0.5, na.rm = T),
+    ssi.tfp = quantile(ssiOE, 0.25, na.rm = T),
+    ssi.sfp = quantile(ssiOE, 0.75, na.rm = T),
+    ssi.mu = mean(ssiOE, na.rm = T),
+    
+    uti.obs.sum = sum(pred_prob_UTI_postop, na.rm = T),
+    uti.exp.sum = sum(pred_prob_UTI_preop, na.rm = T),
+    uti.oe.month = uti.obs.sum/uti.exp.sum,
+    uti.med = quantile(utiOE, 0.5, na.rm = T),
+    uti.tfp = quantile(utiOE, 0.25, na.rm = T),
+    uti.sfp = quantile(utiOE, 0.75, na.rm = T),
+    uti.mu = mean(utiOE, na.rm = T),
+    
+    sepsis.obs.sum = sum(pred_prob_SYSEP_postop, na.rm = T),
+    sepsis.exp.sum = sum(pred_prob_SYSEP_preop, na.rm = T),
+    sepsis.oe.month = sepsis.obs.sum/sepsis.exp.sum,
+    sepsis.med = quantile(sepsisOE, 0.5, na.rm = T),
+    sepsis.tfp = quantile(sepsisOE, 0.25, na.rm = T),
+    sepsis.sfp = quantile(sepsisOE, 0.75, na.rm = T),
+    sepsis.mu = mean(sepsisOE, na.rm = T),
+
+    pneu.obs.sum = sum(pred_prob_PNEU_postop, na.rm = T),
+    pneu.exp.sum = sum(pred_prob_PNEU_preop, na.rm = T),
+    pneu.oe.month = pneu.obs.sum/pneu.exp.sum,
+    pneu.med = quantile(pneuOE, 0.5, na.rm = T),
+    pneu.tfp = quantile(pneuOE, 0.25, na.rm = T),
+    pneu.sfp = quantile(pneuOE, 0.75, na.rm = T),
+    pneu.mu = mean(pneuOE, na.rm = T),
+
+    pts = n(),
+    ssi.sd = sd(pred_prob_SSI_postop),
+    uti.sd = sd(pred_prob_UTI_postop),
+    sepsis.sd = sd(pred_prob_SYSEP_postop),
+    pneu.sd = sd(pred_prob_PNEU_postop)
+  )
+
+# Group aggregation by CT surgery and then by Dr. Meguid
+surg_Tho <- subset(dat5, Surgical.Specialty == mySpecialty)
+surg_Tho2 <- surg_Tho %>%
+  dplyr::group_by(month) %>%
+  dplyr::summarize(
+    num_surgeon = n_distinct(PrimarySurgeonName),
+    
+    ssi.obs.sum = sum(pred_prob_SSI_postop, na.rm = T),
+    ssi.exp.sum = sum(pred_prob_SSI_preop, na.rm = T),
+    ssi.oe.month = ssi.obs.sum/ssi.exp.sum,
+    ssi.med = quantile(ssiOE, 0.5, na.rm = T),
+    ssi.tfp = quantile(ssiOE, 0.25, na.rm = T),
+    ssi.sfp = quantile(ssiOE, 0.75, na.rm = T),
+    ssi.mu = mean(ssiOE, na.rm = T),
+    
+    uti.obs.sum = sum(pred_prob_UTI_postop, na.rm = T),
+    uti.exp.sum = sum(pred_prob_UTI_preop, na.rm = T),
+    uti.oe.month = uti.obs.sum/uti.exp.sum,
+    uti.med = quantile(utiOE, 0.5, na.rm = T),
+    uti.tfp = quantile(utiOE, 0.25, na.rm = T),
+    uti.sfp = quantile(utiOE, 0.75, na.rm = T),
+    uti.mu = mean(utiOE, na.rm = T),
+    
+    sepsis.obs.sum = sum(pred_prob_SYSEP_postop, na.rm = T),
+    sepsis.exp.sum = sum(pred_prob_SYSEP_preop, na.rm = T),
+    sepsis.oe.month = sepsis.obs.sum/sepsis.exp.sum,
+    sepsis.med = quantile(sepsisOE, 0.5, na.rm = T),
+    sepsis.tfp = quantile(sepsisOE, 0.25, na.rm = T),
+    sepsis.sfp = quantile(sepsisOE, 0.75, na.rm = T),
+    sepsis.mu = mean(sepsisOE, na.rm = T),
+
+    pneu.obs.sum = sum(pred_prob_PNEU_postop, na.rm = T),
+    pneu.exp.sum = sum(pred_prob_PNEU_preop, na.rm = T),
+    pneu.oe.month = pneu.obs.sum/pneu.exp.sum,
+    pneu.med = quantile(pneuOE, 0.5, na.rm = T),
+    pneu.tfp = quantile(pneuOE, 0.25, na.rm = T),
+    pneu.sfp = quantile(pneuOE, 0.75, na.rm = T),
+    pneu.mu = mean(pneuOE, na.rm = T),
+
+    pts = n(),
+    ssi.sd = sd(pred_prob_SSI_postop),
+    uti.sd = sd(pred_prob_UTI_postop),
+    sepsis.sd = sd(pred_prob_SYSEP_postop),
+    pneu.sd = sd(pred_prob_PNEU_postop)
+  )
+
+#`r quarters(as.Date(Sys.Date()))` `r year(as.Date(Sys.Date()))`
+```
+
+
+```{r, message = F, warning=F, eval = F}
+# surg_a <- dat5 %>%
+#   dplyr::group_by(PrimarySurgeonName, month, Surgical.Specialty)%>%
+#   dplyr::summarize(
+#     pts = n())%>%
+#   ungroup()%>%
+#   mutate(lt5 = ifelse(pts < 5, 1, 0))%>%
+#   group_by(PrimarySurgeonName, Surgical.Specialty)%>%
+#   summarize(nq_lt5 = sum(lt5))%>%
+#   ungroup()
+# print("Frequency of surgeons' number of quarters with less than 5 surgeries")
+# table(surg_a$nq_lt5)
+# round(prop.table(table(surg_a$nq_lt5)),2)
+# 
+# sl_a <- surg_a%>%
+#   group_by(Surgical.Specialty)%>%
+#   summarize(m_lt5 = mean(nq_lt5))%>%
+#   ungroup()
+# print("Top 10 Service line with highest average number of quarters with less than 5 surgeries")
+# head(sl_a%>%arrange(desc(m_lt5)), 10)
+# 
+# 
+# surg_b <- dat5 %>%
+#   dplyr::group_by(PrimarySurgeonName, month, Surgical.Specialty)%>%
+#   dplyr::summarize(
+#     pts = n())%>%
+#   ungroup()%>%
+#   dplyr::group_by(PrimarySurgeonName, Surgical.Specialty)%>%
+#   dplyr::summarize(
+#     pts_pq = sum(pts)/4)%>%
+#   ungroup()%>%
+#   mutate(lt5 = ifelse(pts_pq < 5, 1, 0))
+# print("Frequency of surgeons' with less than 5 surgeries per quarter")
+# table(surg_b$lt5)
+# round(prop.table(table(surg_b$lt5)), 2)
+# 
+# sl_b <- surg_b%>%
+#   group_by(Surgical.Specialty)%>%
+#   summarize(n_lt5 = sum(lt5))%>%
+#   ungroup()%>%
+#   # number of surgeons in each service line
+#   left_join(surg_b%>%
+#     group_by(Surgical.Specialty)%>%
+#     summarize(n_surgeons = n())%>%
+#     ungroup(), by = "Surgical.Specialty")%>%
+#   mutate(perc_lt5 = round(n_lt5/n_surgeons,2))
+# 
+# print("Top 10 Service line with highest percentage of surgeons with less than 5 surgeries per quarter")
+# head(sl_b%>%arrange(desc(perc_lt5)), 10)
+# 
+# # number of surgeries per quarter for each surgeon
+# dat5 %>%
+#   dplyr::group_by(PrimarySurgeonName, month, Surgical.Specialty)%>%
+#   dplyr::summarize(
+#     pts = n())%>%
+#   pivot_wider(names_from = month, values_from = pts)%>%
+#   mutate(per_quarter = sum(`1`, `2`, `3`, `4`, na.rm = T)/4)
+
+# sa <- dat5
+# sa$month <- factor(sa$month, levels = c(1, 2, 3, 4))
+# surg_a <- dat5 %>%
+#   dplyr::group_by(PrimarySurgeonName, month, Surgical.Specialty, .drop = FALSE)%>%
+#   dplyr::summarize(pts = n())%>%
+#   ungroup()%>%
+#   group_by(PrimarySurgeonName)%>%
+#   fill(Surgical.Specialty, .direction = "downup")
+# write.csv(surg_a, "count_patient.csv")
+```
+
+# Reporting Period: `r head(levels(dat5$month), 1)` – `r tail(levels(dat5$month), 1)`
+
+This is a quarterly Automated Surveillance of Postoperative Infections (ASPIN) report for Dr. **`r print_name`** that summarizes unadjusted and risk-adjusted postoperative infection outcomes in their patients for surgical site infection (SSI), urinary tract infection (UTI), sepsis/septic shock, and pneumonia. More information about ASPIN methodology and a list of references can be found at the end of this document. 
+
+The results presented are for surgical cases performed by Dr. **`r print_name`**, and are compared to all surgical cases performed across UCHealth in their Service Line of **`r unique(surg$Surgical.Specialty)`** during the same period. The results include: (1) overall incidence rates of the four postoperative infection types by quarter and (2) Observed to Expected (O/E) ratios for the four infection types by quarter. Note that only the first operation on each patient during the specified time period is reported.
+
+
+
+# Total number of unique patients who underwent surgery by quarter in `r sort(unique(dat5$year))`
+
+```{r echo=F, message=FALSE, warning=FALSE, results='asis'}
+#pats <- as.data.frame(rbind(surg2$month,surg_Tho2$pts,surg2$pts))
+#colnames(pats) <- c()
+#rownames(pats) <- c("Quarter","Total Patients in Specialty", "Patients by Dr. Meguid")
+#kable(pats)
+library(kableExtra)
+pats <- data.frame(month = levels(dat5$month))%>%
+  left_join(select(surg_Tho2, month, num_surgeon, pts), by = "month")%>%
+  left_join(select(surg2, month, pts)%>%
+              dplyr::rename(s_pts = pts), by = "month")
+# pats <- as.data.frame(cbind(surg_Tho2$month, surg_Tho2$num_surgeon, surg_Tho2$pts,surg2$pts))
+#rownames(pats) <- c()
+title1 <- paste0("Total Patients in ",unique(surg$Surgical.Specialty))
+title2 <- paste0("Patients by ",unique(surg$PrimarySurgeonName))
+
+# TODO : FIX from dat1 to dat 5
+n_surg <- nrow(unique(dat5%>%filter(Surgical.Specialty == mySpecialty)%>%select(PrimarySurgeonName)))
+# n_surg <- dat1%>%
+#             filter(Surgical.Specialty == mySpecialty)%>%
+#             dplyr::group_by(Surgical.Specialty)%>%
+#             summarise(count = n_distinct(PrimarySurgeonName))%>%
+#             ungroup()
+
+colnames(pats) <- c("Quarter", "Number of Surgeons",title1, title2)
+
+pats <- pats%>%
+  rbind(c("Total", 
+          n_surg,
+          # n_surg[1, 2][[1]][1], 
+          sum(pats[,3], na.rm = T), 
+          sum(pats[,4], na.rm = T)))
+
+library(flextable)
+set_flextable_defaults(font.family = "serif")
+flextable(pats)%>%
+  set_table_properties(width = 1, layout = "autofit")
+
+surg_Tho2 <- surg_Tho2%>%
+  select(-num_surgeon)
+
+margin_ci <- function(sd, n){
+  return (qt(0.975, n - 1) * sd/sqrt(n))
+}
+
+surg3 <- surg2[c(1,2,9,16,23,30, 31:34)]
+surg3$ssiR <- round((surg3$ssi.obs.sum/surg3$pts)*100,2)
+surg3$utiR <- round((surg3$uti.obs.sum/surg3$pts)*100,2)
+surg3$sepR <- round((surg3$sepsis.obs.sum/surg3$pts)*100,2)
+surg3$pneuR <- round((surg3$pneu.obs.sum/surg3$pts)*100,2)
+
+surg3$ssiR.lowCI <- round(surg3$ssiR - margin_ci(surg3$ssi.sd, surg3$pts), 2)
+surg3$utiR.lowCI <- round(surg3$utiR - margin_ci(surg3$uti.sd, surg3$pts), 2)
+surg3$sepR.lowCI <- round(surg3$sepR - margin_ci(surg3$sepsis.sd, surg3$pts), 2)
+surg3$pneuR.lowCI <- round(surg3$pneuR - margin_ci(surg3$pneu.sd, surg3$pts), 2)
+
+surg3$ssiR.highCI <- round(surg3$ssiR + margin_ci(surg3$ssi.sd, surg3$pts), 2)
+surg3$utiR.highCI <- round(surg3$utiR + margin_ci(surg3$uti.sd, surg3$pts), 2)
+surg3$sepR.highCI <- round(surg3$sepR + margin_ci(surg3$sepsis.sd, surg3$pts), 2)
+surg3$pneuR.highCI <- round(surg3$pneuR + margin_ci(surg3$pneu.sd, surg3$pts), 2)
+#surg4 <- surg3[c(1,6,7,8,9,10)]
+#names(surg4) <- c("Month", "Total patients", "SSI rate", "UTI rate", "Sepsis rate", "Pneumonia rate")
+#kable(surg4)
+
+surg_Tho3 <- surg_Tho2[c(1,2,9,16,23,30, 31:34)]
+ssici <- BinomCI(x = surg_Tho3$ssi.obs.sum,n = surg_Tho3$pts, sides = "two.sided", method = "modified wilson")
+utici <- BinomCI(x = surg_Tho3$uti.obs.sum,n = surg_Tho3$pts, sides = "two.sided", method = "modified wilson")
+sepci <- BinomCI(x = surg_Tho3$sepsis.obs.sum,n = surg_Tho3$pts, sides = "two.sided", method = "modified wilson")
+pneuci <- BinomCI(x = surg_Tho3$pneu.obs.sum,n = surg_Tho3$pts, sides = "two.sided", method = "modified wilson")
+
+surg_Tho3$ssiR <- ssici[,1] * 100
+surg_Tho3$utiR <- utici[,1] * 100
+surg_Tho3$sepR <- sepci[,1] * 100
+surg_Tho3$pneuR <- pneuci[,1] * 100
+
+surg_Tho3$ssiR.lowCI <- ssici[,2] * 100
+surg_Tho3$utiR.lowCI <- utici[,2] * 100
+surg_Tho3$sepR.lowCI <- sepci[,2] * 100
+surg_Tho3$pneuR.lowCI <- pneuci[,2] * 100
+
+surg_Tho3$ssiR.highCI <- ssici[,3] * 100
+surg_Tho3$utiR.highCI <- utici[,3] * 100
+surg_Tho3$sepR.highCI <- sepci[,3] * 100
+surg_Tho3$pneuR.highCI <- pneuci[,3] * 100
+
+# surg_Tho3$ssiR <- round((surg_Tho3$ssi.obs.sum/surg_Tho3$pts)*100,2)
+# surg_Tho3$utiR <- round((surg_Tho3$uti.obs.sum/surg_Tho3$pts)*100,2)
+# surg_Tho3$sepR <- round((surg_Tho3$sepsis.obs.sum/surg_Tho3$pts)*100,2)
+# surg_Tho3$pneuR <- round((surg_Tho3$pneu.obs.sum/surg_Tho3$pts)*100,2)
+
+# surg_Tho3$ssiR.lowCI <- round(surg_Tho3$ssiR - margin_ci(surg_Tho3$ssi.sd, surg_Tho3$pts), 2)
+# surg_Tho3$utiR.lowCI <- round(surg_Tho3$utiR - margin_ci(surg_Tho3$uti.sd, surg_Tho3$pts), 2)
+# surg_Tho3$sepR.lowCI <- round(surg_Tho3$sepR - margin_ci(surg_Tho3$sepsis.sd, surg_Tho3$pts), 2)
+# surg_Tho3$pneuR.lowCI <- round(surg_Tho3$pneuR - margin_ci(surg_Tho3$pneu.sd, surg_Tho3$pts), 2)
+# 
+# surg_Tho3$ssiR.highCI <- round(surg_Tho3$ssiR + margin_ci(surg_Tho3$ssi.sd, surg_Tho3$pts), 2)
+# surg_Tho3$utiR.highCI <- round(surg_Tho3$utiR + margin_ci(surg_Tho3$uti.sd, surg_Tho3$pts), 2)
+# surg_Tho3$sepR.highCI <- round(surg_Tho3$sepR + margin_ci(surg_Tho3$sepsis.sd, surg_Tho3$pts), 2)
+# surg_Tho3$pneuR.highCI <- round(surg_Tho3$pneuR + margin_ci(surg_Tho3$pneu.sd, surg_Tho3$pts), 2)
+
+# nrow(unique(dat1%>%filter(Surgical.Specialty == mySpecialty)%>%select(PrimarySurgeonName)))
+
+surg3$type = mySurgeonName
+surg_Tho3$type = mySpecialty
+
+surg_total = rbind(surg3,surg_Tho3)
+surg_total$type <- factor(surg_total$type,levels = c(mySpecialty,mySurgeonName))
+
+# ggplot(surg_total, aes(x = month)) +
+#     geom_line(aes(y = ssiR, color = "SSI rate", group = 1)) +
+#     geom_line(aes(y = utiR, color = "UTI rate", group = 1)) +
+#     geom_line(aes(y = sepR, color = "Sepsis rate", group = 1)) +
+#     geom_line(aes(y = pneuR, color = "Pneumonia rate", group = 1)) +
+#     labs(x = "Quarter",
+#          y = "Incidence (%)",
+#          color = "Complication") +
+#     scale_color_manual(values = colors) +
+#     facet_wrap(~type) +
+#     theme(legend.position="bottom",text = element_text(size=10.5))
+
+#colors <- c("Dr. Meguid" = "blue", "All Surgeons in Specialty" = "black")
+
+#p2 <- ggplot() +
+#  geom_point(data = surg_total, aes(x = month, y = pts,color = "All Surgeons in Specialty")) +
+#  geom_point(data = surg_total, aes(x = month, y = pts,color="Dr. Meguid")) + 
+#  geom_line(data = surg_total, aes(x = as.numeric(month), y = as.numeric(pts),color = "Dr. Meguid")) +
+#  geom_line(data = surg_total, aes(x = as.numeric(month), y = as.numeric(pts),color = "All Surgeons in Specialty")) +
+#  scale_colour_manual(name = "Dr. Meguid vs All Surgeons in Specialty",
+#                      values = colors) +   
+#  xlab("Quarter (2020)") +
+#  ylab("SSI OE ratio") 
+#p2
+
+surg_total %<>% mutate(obs_n_ssi = ssiR*pts/100, # sum of post-op predicted probabilities for all patients in service line
+                      obs_n_uti = utiR*pts/100,
+                      obs_n_sep = sepR*pts/100,
+                      obs_n_pneu = pneuR*pts/100)
+
+
+dat7_sup <- surg_total %>% filter(type == mySpecialty) %>%
+             select(month, obs_n_ssi, obs_n_uti, obs_n_sep, obs_n_pneu)
+dat7 <- merge(dat7, dat7_sup, by = "month")
+# switch to old whenever one quarter is rounded to 0
+dat7 %<>% mutate(eps_n_ssi = round(obs_n_ssi / ssi.oe.month, 0), # sum of expected? could use exp.sum
+               eps_n_uti = round(obs_n_uti / uti.oe.month, 0),
+               eps_n_sep = round(obs_n_sep / sepsis.oe.month,0),
+               eps_n_pneu = round(obs_n_pneu / pneu.oe.month,0) ) %>%
+          mutate(obs_n_ssi = round(obs_n_ssi, 0),
+                 obs_n_uti = round(obs_n_uti, 0),
+                 obs_n_sep = round(obs_n_sep, 0),
+                 obs_n_pneu = round(obs_n_pneu, 0))
+
+check <- tibble(type = c("ssi","sep","uti","pneu"),
+      obs = c(max(dat7$obs_n_ssi, na.rm = TRUE), 
+              max(dat7$obs_n_sep,  na.rm = TRUE), 
+              max(dat7$obs_n_uti,  na.rm = TRUE), 
+              max(dat7$obs_n_pneu,  na.rm = TRUE)),
+      obs_m = c(min(dat7$obs_n_ssi, na.rm = TRUE), 
+              min(dat7$obs_n_sep,  na.rm = TRUE), 
+              min(dat7$obs_n_uti,  na.rm = TRUE), 
+              min(dat7$obs_n_pneu,  na.rm = TRUE)))%>%
+  mutate(method = ifelse(obs < 5, "mid.p", "byar"),
+         old = ifelse(obs_m == 0, 1, 0))
+
+
+dat7 %<>% mutate(ssi.lowCI = ifelse(check$old[check$type == "ssi"] == 0, 
+                                    map2_dbl(obs_n_ssi, eps_n_ssi, 
+                                             ~ epi.smr(obs = .x, exp = .y, 
+                                                       method = check$method[check$type == "ssi"],
+                                                       conf.level = 0.95)$lower), 
+                                    ssi.lowCI),
+                 ssi.upCI = ifelse(check$old[check$type == "ssi"] == 0, 
+                                   map2_dbl(obs_n_ssi, eps_n_ssi, 
+                                            ~ epi.smr(obs = .x, exp = .y, 
+                                                      method = check$method[check$type == "ssi"],
+                                                      conf.level = 0.95)$upper), 
+                                   ssi.upCI),
+                 uti.lowCI = ifelse(check$old[check$type == "uti"] == 0,
+                                    map2_dbl(obs_n_uti, eps_n_uti, 
+                                      ~ epi.smr(obs = .x, exp = .y, 
+                                                method = check$method[check$type == "uti"], 
+                                                conf.level = 0.95)$lower),
+                                    uti.lowCI),
+                 uti.upCI = ifelse(check$old[check$type == "uti"] == 0,
+                                   map2_dbl(obs_n_uti, eps_n_uti, 
+                                     ~ epi.smr(obs = .x, exp = .y, 
+                                               method = check$method[check$type == "uti"], 
+                                               conf.level = 0.95)$upper),
+                                   uti.upCI),
+                 sepsis.lowCI = ifelse(check$old[check$type == "sep"] == 0,
+                                       map2_dbl(obs_n_sep, eps_n_sep, 
+                                         ~ epi.smr(obs = .x, exp = .y, 
+                                                   method = check$method[check$type == "sep"], 
+                                                   conf.level = 0.95)$lower),
+                                       sepsis.lowCI),
+                 sepsis.upCI = ifelse(check$old[check$type == "sep"] == 0,
+                                      map2_dbl(obs_n_sep, eps_n_sep, 
+                                        ~ epi.smr(obs = .x, exp = .y, 
+                                                  method = check$method[check$type == "sep"], 
+                                                  conf.level = 0.95)$upper),
+                                      sepsis.upCI),
+                 pneu.lowCI = ifelse(check$old[check$type == "pneu"] == 0,
+                                     map2_dbl(obs_n_pneu, eps_n_pneu, 
+                                       ~ epi.smr(obs = .x, exp = .y, 
+                                                 method = check$method[check$type == "pneu"],
+                                                 conf.level = 0.95)$lower),
+                                     pneu.lowCI),
+                 pneu.upCI = ifelse(check$old[check$type == "pneu"] == 0,
+                                    map2_dbl(obs_n_pneu, eps_n_pneu, 
+                                      ~ epi.smr(obs = .x, exp = .y, 
+                                                method = check$method[check$type == "pneu"],
+                                                conf.level = 0.95)$upper),
+                                    pneu.upCI))
+
+```
+
+\newpage
+
+# Interpreting the graphs
+
+## Unadjusted Incidence
+
+In the figures on the left, the blue points and lines indicate Dr. **`r print_name`**’s incidence of each complication. Black triangles, 95% confidence intervals (CIs), and lines represent the incidence of each complication for all patients who underwent surgery by surgeons in the **`r unique(surg$Surgical.Specialty)`** Service Line (including Dr. **`r print_name`**).
+
+## Risk-Adjusted Observed to Expected Ratios (O/E Ratios)
+
+In the figures on the right, the blue points and lines indicate Dr. **`r print_name`**’s O/E ratios. Black triangles, 95% confidence intervals (CIs), and lines represent the outcomes of all patients who underwent surgery by surgeons in the **`r unique(surg$Surgical.Specialty)`** Service Line (including Dr. **`r print_name`**). The red dotted horizontal line in the graph on the right represents expected outcomes (1.0). An O/E ratio of 1.0 indicates that the surgeon or service line is experiencing the expected number of infections for patients at their risk level. An O/E ratio above 1.0 indicates higher than expected infections for patients at their risk level and an O/E ratio below 1.0 represents lower than expected infections for patients at their risk level.
+
+### Surgical Site Infections (SSI)
+
+```{r echo=F, message=FALSE, warning=FALSE, results='asis', fig.width=16, fig.height=9}
+#p1 <- ggplot() +
+#  geom_pointrange(data = dat7, aes(x = month, y = ssi.med, ymin = ssi.tfp, ymax = ssi.sfp)) +
+#  geom_point(data = surg2, aes(x = month, y = ssi.med), color = "blue", size = 4, shape = 17) +
+#  geom_line() +
+#  geom_hline(yintercept=1, col = "red") +
+#  xlab("Quarter (2020)") +
+#  ylab("Median (IQR) SSI OE ratio") 
+level1 <- paste0(mySpecialty," with 95% CI")
+#assign()
+#colors <- c(mySurgeonName = "blue", level1 = "black")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level1)
+
+#shape <- c(level1 = 19, mySurgeonName = 17)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level1)
+
+p2 <- ggplot() +
+  geom_pointrange(data = dat7, aes(x = month, y = ssi.oe.month, ymin = ssi.lowCI, 
+                                   ymax = ssi.upCI, color = level1, shape=level1)) +
+  geom_point(data = surg2, aes(x = month, y = ssi.oe.month,color = paste0(mySurgeonName, "  "), 
+                               shape = paste0(mySurgeonName, "  ")), size = 6) + 
+  geom_point(data = dat7, aes(x = month, y = ssi.oe.month, colour = level1, shape = level1), size = 6) +
+  geom_line(data = surg2, aes(x = as.numeric(month), y = as.numeric(ssi.oe.month),
+                              color = paste0(mySurgeonName, "  ")), size = 1) +
+  geom_line(data = dat7, aes(x = as.numeric(month), y = as.numeric(ssi.oe.month),color = level1), size = 1) +
+  geom_hline(yintercept=1, col = "red",linetype = "dashed") +
+  #scale_color_manual(values=colors) +
+  #scale_shape_manual(values=shape) +
+  scale_colour_manual(name = paste0(paste0(mySurgeonName, "  ")," vs All Surgeons in ",mySpecialty),
+                      #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(paste0(mySurgeonName, "  ")," vs All Surgeons in ",mySpecialty),
+                     #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("SSI O/E ratio") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "bottom",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+
+
+level0 <- paste0(mySpecialty)
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level0)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level0)
+p21 <- ggplot() +
+ geom_pointrange(data = surg_total%>%filter(type == mySpecialty), 
+                 aes(x = month, y = ssiR, ymin = ssiR.lowCI, ymax = ssiR.highCI, 
+                     color = level0, shape=level0))+
+ geom_point(data = surg_total%>%filter(type == mySpecialty), 
+            aes(x = month, y = ssiR, color = level0, shape = level0), size = 6) +
+ geom_point(data = surg_total%>%filter(type == mySurgeonName), 
+            aes(x = month, y = ssiR,color = paste0(mySurgeonName, "  "), shape = paste0(mySurgeonName, "  ")), size = 6) +
+ geom_line(data = surg_total%>%filter(type == mySurgeonName), 
+           aes(x = as.numeric(month), y = as.numeric(ssiR),color = paste0(mySurgeonName, "  ")), size = 1) +
+ geom_line(data = surg_total%>%filter(type == mySpecialty), 
+           aes(x = as.numeric(month), y = as.numeric(ssiR),color = level0), size = 1) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("SSI Incidence (%)") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "None",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+
+#grid.arrange(p1, p2, ncol=2)
+ggarrange(p21, p2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+### Urinary Tract Infections (UTI)
+
+```{r echo=F, message=FALSE, warning=FALSE, results='asis', fig.width=16, fig.height=9}
+
+#p.u1 <- ggplot() +
+#  geom_pointrange(data = dat7, aes(x = month, y = uti.med, ymin = uti.tfp, ymax = uti.sfp)) +
+#  geom_point(data = surg2, aes(x = month, y = uti.med), colour = "blue", shape = 17, size = 4) +
+#  geom_line() +
+  #facet_wrap(~Surgical.Specialty) + 
+#  geom_hline(yintercept=1, col = "red") +
+#  xlab("Quarter (2020)") +
+#  ylab("Median (IQR) UTI OE ratio") 
+
+level1 <- paste0(mySpecialty,"  ")
+#assign()
+#colors <- c(mySurgeonName = "blue", level1 = "black")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level1)
+
+#shape <- c(level1 = 19, mySurgeonName = 17)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level1)
+
+p.u2 <- ggplot() +
+  geom_pointrange(data = dat7, aes(x = month, y = uti.oe.month, ymin = uti.lowCI, 
+                                   ymax = uti.upCI,color = level1,shape=level1)) +
+  geom_point(data = surg2, aes(x = month, y = uti.oe.month,color=paste0(mySurgeonName, "  "),
+                               shape=paste0(mySurgeonName, "  ")), size = 6) + 
+  geom_point(data = dat7, aes(x = month, y = uti.oe.month, colour = level1, shape = level1), size = 6) +
+  geom_line(data = surg2, aes(x = as.numeric(month), y = as.numeric(uti.oe.month),
+                              color = paste0(mySurgeonName, "  ")), size = 1) +
+  geom_line(data = dat7, aes(x = as.numeric(month), y = as.numeric(uti.oe.month),color = level1), size = 1) +
+  geom_hline(yintercept=1, col = "red",linetype = "dashed") +
+  #scale_color_manual(values=colors) +
+  #scale_shape_manual(values=shape) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("UTI O/E Ratio") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "bottom",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+
+level0 <- paste0(mySpecialty, "  ")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level0)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level0)
+p.u21 <- ggplot()+
+  geom_pointrange(data = surg_total%>%filter(type == mySpecialty), 
+                 aes(x = month, y = utiR, ymin = utiR.lowCI, ymax = utiR.highCI, 
+                     color = level0, shape=level0))+
+ geom_point(data = surg_total%>%filter(type == mySpecialty), 
+            aes(x = month, y = utiR, color = level0, shape = level0), size = 6) +
+ geom_point(data = surg_total%>%filter(type == mySurgeonName), 
+            aes(x = month, y = utiR,color = paste0(mySurgeonName, "  "), shape = paste0(mySurgeonName, "  ")), size = 6) +
+ geom_line(data = surg_total%>%filter(type == mySurgeonName), 
+           aes(x = as.numeric(month), y = as.numeric(utiR),color = paste0(mySurgeonName, "  ")), size = 1) +
+ geom_line(data = surg_total%>%filter(type == mySpecialty), 
+           aes(x = as.numeric(month), y = as.numeric(utiR),color = level0), size = 1) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("UTI Incidence (%)") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "none",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+#grid.arrange(p1, p2, ncol=2)
+#p.u21/p.u2
+
+ggarrange(p.u21, p.u2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+### Sepsis/Septic Shock
+
+```{r echo=F, message=FALSE, warning=FALSE, results='asis', fig.width=16, fig.height=9}
+#p.s1 <- ggplot() +
+#  geom_pointrange(data = dat7, aes(x = month, y = sepsis.med, ymin = sepsis.tfp, ymax = sepsis.sfp)) +
+#  geom_point(data = surg2, aes(x = month, y = sepsis.med), colour = "blue", shape = 17, size = 4) +
+#  geom_line() +
+  #facet_wrap(~Surgical.Specialty) + 
+#  geom_hline(yintercept=1, col = "red") +
+#  xlab("Quarter (2020)") +
+#  ylab("Median (IQR) Sepsis OE ratio")
+
+level1 <- paste0(mySpecialty,"  ")
+#assign()
+#colors <- c(mySurgeonName = "blue", level1 = "black")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level1)
+
+#shape <- c(level1 = 19, mySurgeonName = 17)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level1)
+
+p.s2 <- ggplot() +
+  geom_pointrange(data = dat7, aes(x = month, y = sepsis.oe.month, ymin = sepsis.lowCI, 
+                                   ymax = sepsis.upCI,color = level1,shape=level1)) +
+  geom_point(data = surg2, aes(x = month, y = sepsis.oe.month,color=paste0(mySurgeonName, "  "),
+                               shape=paste0(mySurgeonName, "  ")), size = 6) + 
+  geom_point(data = dat7, aes(x = month, y = sepsis.oe.month, colour = level1, shape = level1), size = 6) +
+  geom_line(data = surg2, aes(x = as.numeric(month), y = as.numeric(sepsis.oe.month),
+                              color = paste0(mySurgeonName, "  ")), size = 1) +
+  geom_line(data = dat7, aes(x = as.numeric(month), y = as.numeric(sepsis.oe.month),color = level1), size = 1) +
+  geom_hline(yintercept=1, col = "red",linetype = "dashed") +
+  #scale_color_manual(values=colors) +
+  #scale_shape_manual(values=shape) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("Sepsis O/E Ratio") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "bottom",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+
+level0 <- paste0(mySpecialty, "  ")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level0)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level0)
+p.s21 <- ggplot() +
+  geom_pointrange(data = surg_total%>%filter(type == mySpecialty), 
+                 aes(x = month, y = sepR, ymin = sepR.lowCI, ymax = sepR.highCI, 
+                     color = level0, shape=level0))+
+ geom_point(data = surg_total%>%filter(type == mySpecialty), 
+            aes(x = month, y = sepR, color = level0, shape = level0), size = 6) +
+ geom_point(data = surg_total%>%filter(type == mySurgeonName), 
+            aes(x = month, y = sepR,color = paste0(mySurgeonName, "  "), shape = paste0(mySurgeonName, "  ")), size = 6) +
+ geom_line(data = surg_total%>%filter(type == mySurgeonName), 
+           aes(x = as.numeric(month), y = as.numeric(sepR),color = paste0(mySurgeonName, "  ")), size = 1) +
+ geom_line(data = surg_total%>%filter(type == mySpecialty), 
+           aes(x = as.numeric(month), y = as.numeric(sepR),color = level0), size = 1) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("Sepsis Incidence (%)") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "none",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+#grid.arrange(p1, p2, ncol=2)
+#p.s21/p.s2
+ggarrange(p.s21, p.s2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+### Pneumonia
+
+```{r echo=F, message=FALSE, warning=FALSE, results='asis', fig.width=16, fig.height=9}
+#p.p1 <- ggplot() +
+#  geom_pointrange(data = dat7, aes(x = month, y = pneu.med, ymin = pneu.tfp, ymax = pneu.sfp)) +
+#  geom_point(data = surg2, aes(x = month, y = pneu.med), colour = "blue", shape = 17, size = 4) +
+#  geom_line() +
+  #facet_wrap(~Surgical.Specialty) + 
+#  geom_hline(yintercept=1, col = "red") +
+#  xlab("Quarter (2020)") +
+#  ylab("Median (IQR) Pneumonia OE ratio") 
+
+level1 <- paste0(mySpecialty,"  ")
+#assign()
+#colors <- c(mySurgeonName = "blue", level1 = "black")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level1)
+
+#shape <- c(level1 = 19, mySurgeonName = 17)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level1)
+
+p.p2 <- ggplot() +
+  geom_pointrange(data = dat7, aes(x = month, y = pneu.oe.month, ymin = pneu.lowCI, ymax = pneu.upCI,color = level1,shape=level1)) +
+  geom_point(data = surg2, aes(x = month, y = pneu.oe.month,color=paste0(mySurgeonName, "  "),
+                               shape=paste0(mySurgeonName, "  ")), size = 6) + 
+  geom_point(data = dat7, aes(x = month, y = pneu.oe.month, colour = level1, shape = level1), size = 6) +
+  geom_line(data = surg2, aes(x = as.numeric(month), y = as.numeric(pneu.oe.month),
+                              color = paste0(mySurgeonName, "  ")), size = 1) +
+  geom_line(data = dat7, aes(x = as.numeric(month), y = as.numeric(pneu.oe.month),color = level1), size = 1) +
+  geom_hline(yintercept=1, col = "red",linetype = "dashed", size = 1) +
+  #scale_color_manual(values=colors) +
+  #scale_shape_manual(values=shape) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     #labels = c("Dr. Meguid", "All Surgeons in Specialty"),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("Pneumonia O/E Ratio") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "bottom",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1)) 
+
+level0 <- paste0(mySpecialty, "  ")
+colors <- c("blue","black")
+names(colors) <- c(paste0(mySurgeonName, "  "),level0)
+shape <- c(19,17)
+names(shape) <- c(paste0(mySurgeonName, "  "),level0)
+p.p21 <- ggplot() +
+  geom_pointrange(data = surg_total%>%filter(type == mySpecialty), 
+                 aes(x = month, y = pneuR, ymin = pneuR.lowCI, ymax = pneuR.highCI, 
+                     color = level0, shape=level0))+
+ geom_point(data = surg_total%>%filter(type == mySpecialty), 
+            aes(x = month, y = pneuR, color = level0, shape = level0), size = 6) +
+ geom_point(data = surg_total%>%filter(type == mySurgeonName), 
+            aes(x = month, y = pneuR,color = paste0(mySurgeonName, "  "), shape = paste0(mySurgeonName, "  ")), size = 6) +
+ geom_line(data = surg_total%>%filter(type == mySurgeonName), 
+           aes(x = as.numeric(month), y = as.numeric(pneuR),color = paste0(mySurgeonName, "  ")), size = 1) +
+ geom_line(data = surg_total%>%filter(type == mySpecialty), 
+           aes(x = as.numeric(month), y = as.numeric(pneuR),color = level0), size = 1) +
+  scale_colour_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                      values = colors) +   
+  scale_shape_manual(name = paste0(mySurgeonName," vs All Surgeons in ",mySpecialty),
+                     values = shape) +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  #theme(legend.position = "right")+
+  # xlab(paste0("Quarter (",myYear,")")) +
+  xlab(paste0("Quarter")) +
+  ylab("Pneumonia Incidence (%)") +
+  theme_bw()+
+  theme(text = element_text(size=25),
+        legend.position = "none",
+        legend.title=element_blank(),
+        panel.grid = element_line(size = 1))
+#grid.arrange(p1, p2, ncol=2)
+#p.p21/p.p2
+
+#exp(-3.0698+.2410-.5771-.8417)/(1+exp(-3.0698+.2410-.5771-.8417))
+#.85/.014
+ggarrange(p.p21, p.p2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+```
+
+\newpage
+
+# About ASPIN
+
+This is a draft of the first report to UCHealth surgeons and administrators from the ASPIN project (Automated Surveillance of Postoperative Infections) funded by a grant from the Agency for Healthcare Research and Quality. The purpose of ASPIN is to develop risk-adjusted measures of postoperative infections (surgical site infections, urinary tract infections, sepsis, and pneumonia) for the UCHealth system using electronic health record (EHR) data to support quality improvement efforts. The models for the identification of a patient’s postoperative infections, preoperative risk for postoperative infections, and the observed to expected (O/E) ratios using EHR data were validated using the UCHealth data in the American College of Surgeons National Surgical Quality Improvement Program (ACS-NSQIP) when it was participating in the Program from 2013-2019. The motivations for developing ASPIN were 3-fold: (1) To replace the ACS-NSQIP at UCHealth, which stopped participating in the program in 2020; (2) To cover all surgical operations instead of a 10-15% sample as was done in the ACS-NSQIP program; and (3) To develop risk-adjusted outcomes down to the level of the individual surgeon. The latter two motivations could not be achieved by ACS-NSQIP participation.
+
+Statistical models for the identification of postoperative infections use EHR data up to 30 days after the operation. These data included demographic characteristics, details about the operation, surgeon information, ICD-9 and ICD-10 diagnosis codes, procedure names, laboratory data, and medications. The models contain between 4 and 8 predictor variables and achieved an area under the receiver operating characteristic curve (AUC) >0.91, >81% specificity, >87% sensitivity, >99% negative predictive value, and 10-15% positive predictive value. Also, the overall infection incidence estimates over all operations in the UCHealth ACS-NSQIP patients were similar to those found in the ACS-NSQIP data using nurse chart review: 3.3% vs. 3.1% for SSI; 1.7% vs. 1.6% for UTI; 2.5% vs. 2.0% for sepsis; and 0.9% vs. 0.7% for pneumonia. The models were published in the journal Surgery in 2023.$^1$
+
+Statistical models for estimating preoperative patient risk of postoperative infections used EHR data up to 365 days prior to the patient’s operation. The final preoperative models contain 6-7 predictor variables and have AUCs between 0.73 and 0.89. These AUCs are similar to the AUCs achieved using preoperative variables from the ACS-NSQIP data. The study reporting the preoperative models was published in Annals of Surgery in 2024.$^2$ 
+
+The O/E ratios are computed by the summation of the patient probabilities of having had a postoperative infection divided by the summation of the patient preoperative probabilities of developing a postoperative infection.  An O/E ratio of 1.0 indicates that the unit’s patients (individual surgeon, service line, surgical department, or hospital) are experiencing the expected number of infections for the given risk of the patients. An O/E ratio >1.0 indicates that the hospital’s, specialty’s, or individual surgeon’s patients are experiencing more postoperative infections than would be expected on the basis of their patients’ preoperative risks, and perhaps there is room for improvement. An O/E ratio <1.0 indicates that the hospital’s, specialty’s, or individual surgeon’s patients are experiencing fewer postoperative infections than would be expected on the basis of those patients’ preoperative risks, which is a good and a desirable outcome. In a third study, we compared O/E ratios derived from the EHR data to O/E ratios computed from the “gold-standard” ACS-NSQIP data for the five largest hospitals in the UCHealth system (University of Colorado Hospital at Anschutz Medical Campus; Memorial Hospital Central and Memorial Hospital North in Colorado Springs; and Medical Center of the Rockies and Poudre Valley Hospital in the Ft. Collins area). The O/E ratios for the 5 hospitals derived from the EHR data versus the ACS-NSQIP data were very similar, with a correlation coefficient of 0.99 for surgical site infection, 0.68 for UTI, 0.75 for sepsis, and 0.85 for pneumonia. A study reporting these results is currently under peer review for publication (reference 3).
+For future reports, we are also working on incorporating the non-infectious ACS-NSQIP postoperative complications into these reports. They include: 30-day mortality; overall morbidity; the specific complications of pulmonary, cardiac, renal, bleeding, VTE, and stroke; unplanned hospital readmissions; and non-home hospital discharge. We currently have completed the preoperative and postoperative EHR models and O/E ratios for these outcomes, and have 3 papers under review at Annals of Surgery.
+
+
+
+# References
+
+1.	Colborn K, Zhuang Y, Dyas A, et al. Development and validation of models for detection of postoperative infections using structured electronic health records data and machine learning. Surgery 2023;173: 464-471.
+
+2.	Zhuang Y, Dyas A, Meguid R, et al. Preoperative prediction of postoperative infections using machine learning and electronic health record data. Annals of surgery 2024; 279: 720-726.
+
+3.	Colborn KL, Fei Y, Henderson WG, et al. Estimation of risk-adjusted postoperative infection outcomes using interpretable machine learning and electronic health record data. Under review at Surgery.
+
+
+Funding for the development of ASPIN: Department of Surgery, University of Colorado School of Medicine, Agency for Healthcare Research & Quality grants R03HS026019 & R01HS027417
+
+IMPORTANT DISCLAIMER: Automated Surveillance of Postoperative Infections (ASPIN) is a comprehensive near real-time surveillance system for postoperative infections by applying machine learning algorithms to the electronic health record (EHR) to create periodic reports that are shared with surgeons. It is intended for use to help identify patients who experienced a postoperative infectious complication and to allow surgeons to be aware of their postoperative complications.
+
+The information provided on or through this tool does not constitute medical advice, and should not be used for diagnosing or treating a health or medical condition. The information, including but not limited to the results derived from use of this tool, is provided “as-is” for information purposes only and any use of or reliance on the information is solely at the user’s own risk. This complication assessment is only a probability and not exact; individual patient outcomes may differ. The Regents of the University of Colorado make no warranties or representations of any kind, express or implied (including those of merchantability, fitness for a particular purpose or noninfringement), as to the accuracy or completeness of the information provided through this tool, and will not be liable for any claim, damage or duty to indemnify, defend or the user hold harmless related in any way to any of the information provided by or through this tool, irrespective of cause or legal theory. The foregoing is in addition to any other limitations of liability available to the Regents of the University of Colorado.
+
+Copyright © 2020 – 2024 The Regents of the University of Colorado. All rights reserved. This contains material protected under International and Federal Copyright Laws and Treaties. Any unauthorized reprint or use of this material is prohibited.
+
