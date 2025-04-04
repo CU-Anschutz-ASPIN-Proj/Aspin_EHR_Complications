@@ -15,8 +15,9 @@ lab_positive$ind_positive[!(substring(lab_positive$LabResult,1,3)=="No " | subst
 lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
 
 
-lab <- lab_positive2[,-ncol(lab_positive2)]" 
-3. Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"
+lab <- lab_positive2[,-ncol(lab_positive2)]"    
+
+3. Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"  
 4. Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications, 
 
 ## Naming Convetion 
