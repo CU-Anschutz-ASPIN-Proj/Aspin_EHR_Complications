@@ -28,3 +28,15 @@ Different Folder name based on the date of data, but same names for processed da
 Modularity (bt step, )
 Important Steps all processed data files. 
 Achieve shared code and processed data files through those processed data files. Such as share "ICD10_uni_surg_id_spec.rds" or share predictive probability 
+
+
+## Notes
+For Misha May paper, only for UCH Thoracic Surgeons, filtered by UCH thoracic "# TODO: filter by UCH 
+uch_list <- read_excel("../data/2024_10_28_UCH_surgeons_and_pivot_tables_YS.xlsx", 
+                       sheet = 6) %>%
+  dplyr::rename("specialty" = "ServiceLine",
+                "name" = "PrimarySurgeonName")
+
+# length(unique(dat5$PrimarySurgeonName))
+
+dat5 %<>% filter(PrimarySurgeonName %in% uch_list$name)"
