@@ -8,6 +8,7 @@ rm(list = setdiff(ls(), vars_to_keep))
 
 
 library(tidyverse)
+library(data.table)#fread
 
 source("./global_vars.R")
 # diag
@@ -16,7 +17,9 @@ source("./global_vars.R")
 # colnames(Epic_data)[grepl("phecode", colnames(Epic_data), ignore.case = TRUE)]
 Epic_data <- readRDS(paste0(fp_processed,
                     "ICD10_uni_surg_id_spec.rds"))
-
+#_r represents reduced version, speeds up run time and reduce RAM usage
+Epic_data_r <- Epic_data%>%
+  dplyr::select(arb_person_id, SurgeryDate_asDate, SurgeryID)
 # sum(is.na(Epic_data$SurgeryID))
 
 # table(Epic_data$PrimarySurgeonSpecialty)
@@ -28,27 +31,34 @@ Epic_data <- readRDS(paste0(fp_processed,
 # Diag table4
 # read_csv
 # TODO: fread
-Diag <- read.csv(paste0("../data/", date_str, "/", fp_prefix, 
-                        "Table4_Diagnosis_", date_str, ".csv")) 
-# %>% as.data.frame()
+Diag <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                        "Table4_Diagnosis_", date_str, ".csv"))%>%as.data.frame()
 
 phe_code <- read.table(file = "../data/ICDMAP.txt",header = TRUE)
 # lab table11
-Lab <- read.csv(paste0("../data/", date_str, "/", fp_prefix, 
-                       "Table11_Lab_", date_str, ".csv"))
-      
+Lab <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                       "Table11_Lab_", date_str, ".csv"))%>%as.data.frame()
+Lab_r <- Lab%>%
+  dplyr::select(arb_person_id, LabPanelName, LabCollectedDate)
+
 # medi table7
-Medi <- read.csv(paste0("../data/", date_str, "/", fp_prefix, 
-                        "Table7_Medications_", date_str, ".csv"))
+Medi <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                        "Table7_Medications_", date_str, ".csv"))%>%as.data.frame()
+Medi_r <- Medi%>%
+  dplyr::select(arb_person_id, TherapeuticClass, PharmaceuticalClass, OrderedDate)
 
 # proc table5
-Proc <- read.csv(paste0("../data/", date_str, "/", fp_prefix, 
-                        "Table5_Procedures_", date_str, ".csv"))
+Proc <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                        "Table5_Procedures_", date_str, ".csv"))%>%as.data.frame()
+Proc_r <- Proc%>%
+  dplyr::select(arb_person_id, ProcedureName, ProcedureEventDate)
 
 # gender table1 
-patient <- read.csv(paste0("../data/", date_str, "/", fp_prefix, 
-                           "Table1_Person_", date_str, ".csv"))
-  
+patient <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                           "Table1_Person_", date_str, ".csv"))%>%as.data.frame()
+# need to check if this is in accordance with your folder
+mrn <- fread(paste0("../data/", date_str, "/", fp_prefix, 
+                    "MRN", date_str, ".csv"))%>%as.data.frame()
 
 # # preop rate
 # SSI_coef_preop <- as.data.frame(read.csv(file = "../data/model/SSI_coef_20220906.csv",check.names=FALSE))
