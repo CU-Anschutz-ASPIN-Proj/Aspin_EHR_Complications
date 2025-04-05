@@ -14,118 +14,51 @@ library(fastDummies)
 # #Diag$DiagnosisDate_ad <- as.Date(Diag$DiagnosisDate)
 # Epic_data <- ICD10_uni_surg_id_spec
 
-diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data$arb_person_id,]
+diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data_r$arb_person_id,]
 
 # phe_code <- read.table(file = "data/ICDMAP.txt",header = TRUE)
 
 diag_cohort$ICD <- diag_cohort$DiagnosisCode
 phe_code$flag <- as.factor(phe_code$flag)
 phe_code[is.na(phe_code$flag)] -> "10"
-comp_merge <- merge(diag_cohort,phe_code,by="ICD",all.x = TRUE)
+comp_merge <- left_join(diag_cohort,phe_code,by="ICD")
 comp_merge$phecode[is.na(comp_merge$phecode)] -> "Other"
 make_dummyvf <- comp_merge[!is.na(comp_merge$phecode),]
-make_dummyvf_keep <- make_dummyvf[(make_dummyvf$phecode %in% c(80,1011,501,590,591,1013) | 
-                                     substring(make_dummyvf$phecode,1,3) %in% c(599,592,540,994,480)),]
-need_merge <- make_dummyvf_keep
-
-check_diff <- setdiff(unique(Epic_data$arb_person_id),unique(Diag$arb_person_id))
-
-#### indicator for diag ####
-inter_Epic <- intersect(unique(Epic_data$arb_person_id),unique(need_merge$arb_person_id))
-
-nsqip_diag_merge <-  merge(need_merge,Epic_data,by = c("arb_person_id", "arb_encounter_id"), all = TRUE)
-
-
-### Validation ###
+need_merge <- make_dummyvf[(make_dummyvf$phecode %in% c(80,1011,501,590,591,1013,
+                                                        342,394.7,411.2,411.8,427.12,427.5,429,797,994.21,285,740.1,743.11,800,
+                                                        38,480,501,276.13,442,559,585.1,415.11,452,452.2,80,850,851,591,599.3) | 
+                              substring(make_dummyvf$phecode,1,3) %in% c(599,592,540,994,480)),]
+# inter_Epic <- intersect(unique(Epic_data$arb_person_id),unique(need_merge$arb_person_id))
+nsqip_diag_merge <-  full_join(need_merge, Epic_data_r, by = c("arb_person_id"))
 
 nsqip_diag_merge$DiagnosisDate[nsqip_diag_merge$DiagnosisDate==""] <- NA
 nsqip_diag_merge$as_date_diag <- as.Date(nsqip_diag_merge$DiagnosisDate)
 nsqip_diag_merge$SurgeryDate_asDate <- as.Date(nsqip_diag_merge$SurgeryDate_asDate)
-
 nsqip_diag_merge$length_diag_operation <- nsqip_diag_merge$SurgeryDate_asDate-nsqip_diag_merge$as_date_diag
-
-### validation session ends ###
-
-nsqip_diag_merge$ind_rec_yesno[is.na(nsqip_diag_merge$length_diag_operation)] <- 0
-nsqip_diag_merge$ind_rec_yesno[!is.na(nsqip_diag_merge$length_diag_operation)] <- 1
-
-nsqip_diag_merge$ind_rec_30days[nsqip_diag_merge$length_diag_operation <= 0 & nsqip_diag_merge$length_diag_operation >= -30] <- 1
-nsqip_diag_merge$ind_rec_30days[nsqip_diag_merge$length_diag_operation < -30 | nsqip_diag_merge$length_diag_operation > 0 ] <- 0
 
 nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation < -30 ] <- 0
 nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation <= 0 & nsqip_diag_merge$length_diag_operation >= -30 ] <- 1
 nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation > 0 ] <- 2
 nsqip_diag_merge$ind_operative_rec[is.na(nsqip_diag_merge$length_diag_operation)] <- NA
 
-# table(nsqip_diag_merge$DiagnosisCodeType)
-
 diag_cohort_icd10 <- nsqip_diag_merge[!is.na(nsqip_diag_merge$DiagnosisCodeType),]
 
-ICD10_rec_excl <- diag_cohort_icd10
 make_dummy <- diag_cohort_icd10[diag_cohort_icd10$ind_operative_rec==1 & !is.na(diag_cohort_icd10$ind_operative_rec),]
 
-make_dummyvf_keep <- make_dummy
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, phecode)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(phecode, yesno, fill = 0)
 
-dummydf1 <- dummy_cols(make_dummyvf_keep, select_columns = "phecode")
-dficd1 <- dummydf1
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-# colnames(dficd1)[283:285]
-# ncol(dficd1)
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
-n <- which(colnames(dficd1) == "phecode_80")
+final_data[is.na(final_data)] <- 0 
 
-for (i in n:ncol(dficd1)) {
-  colnames(dficd1)[i] <- substring(colnames(dficd1)[i], 9)
-}
-
-for (i in n:ncol(dficd1)) {
-  dficd1[,i] <- ifelse(dficd1[,i] == 0, NA, 1)
-}
-
-
-#start1 <- Sys.time()
-dficd2 <- 
-  dficd1 %>% 
-  group_by(SurgeryID) %>%
-  fill_(names(dficd1)[n:ncol(dficd1)], .direction = "up") 
-#end1 <- Sys.time()
-#spendtime1 <- end1-start1
-
-dficd2 <- as.data.frame(dficd2)
-
-first_row_dficd3 <- dficd2[!duplicated(dficd2$SurgeryID),]
-
-transpose_icd10 <- first_row_dficd3
-
-# colnames(transpose_icd10)[283 : 285]
-
-for (i in n:ncol(transpose_icd10)) {
-  transpose_icd10[,i][is.na(transpose_icd10[,i])] <- 0 
-}
-
-store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(make_dummyvf_keep$SurgeryID))
-
-comp_patients <- Epic_data[Epic_data$SurgeryID %in% store_patient_names_96,]
-
-unique_comp_patients <- comp_patients[!duplicated(comp_patients$SurgeryID),]
-
-final_data <- rbind.fill(transpose_icd10,unique_comp_patients)
-final_data <- as.data.frame(final_data)
-
-# colnames(final_data)[283 : 285]
-
-#View(final_data[16000:16362,104:110])
-for (i in n:ncol(final_data)) {
-  final_data[,i][is.na(final_data[,i])] <- 0 
-}
-
-final_data_store <- final_data[,1:(ncol(final_data)-1)]
-
-#write.csv(final_data_store,file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/diag_postop/final_data_store_diag_postop.csv")
-final_data_store_diag_postop <- final_data_store
-
-saveRDS(final_data_store_diag_postop, paste0(fp_processed,
-                                       "final_data_store_diag_postop.rds"))
+saveRDS(final_data, paste0(fp_processed,"final_data_store_diag_postop.rds"))
 
 # glimpse(final_data_store_diag_postop)
 #########################################################################
@@ -136,13 +69,13 @@ saveRDS(final_data_store_diag_postop, paste0(fp_processed,
 library(comorbidity)
 
 
-Epic_data1 <- Epic_data[,c("arb_person_id","SurgeryID","SurgeryDate_asDate")]
+#Epic_data1 <- Epic_data[,c("arb_person_id","SurgeryID","SurgeryDate_asDate")]
 
-diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data1$arb_person_id,]
+diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data_r$arb_person_id,]
 
-need_merge <- diag_cohort[,c("arb_person_id","DiagnosisDate","DiagnosisCodeType","DiagnosisCode")]
+need_merge <- diag_cohort%>%select(arb_person_id,DiagnosisDate,DiagnosisCodeType,DiagnosisCode)
 #### indicator for diag ####
-nsqip_diag_merge <-  merge(need_merge,Epic_data1,by = "arb_person_id", all = TRUE)
+nsqip_diag_merge <-  full_join(need_merge, Epic_data1, by = "arb_person_id")
 
 #save(nsqip_diag_merge,file = "/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/combid_pre/combid_merge_data.Rdata")
 #nsqip_diag_merge$as_date_diag <- as.Date(as.character(nsqip_diag_merge$DiagnosisDate))
@@ -285,6 +218,10 @@ final_combidity$windex[final_combidity$wscore==0] <- "0"
 final_combidity$windex[final_combidity$wscore==1 |final_combidity$wscore==2] <- "1-2"
 final_combidity$windex[final_combidity$wscore>=3] <- ">=3"
 
+final_combidity$windex2[final_combidity$wscore==0] <- "0"
+final_combidity$windex2[final_combidity$wscore==1 |final_combidity$wscore==2] <- "1-2"
+final_combidity$windex2[final_combidity$wscore==3 |final_combidity$wscore==4] <- "3-4"
+final_combidity$windex2[final_combidity$wscore>=5] <- ">=5"
 
 final_combidity2 <- final_combidity
 
@@ -307,130 +244,42 @@ rm(final_combidityv3, rest_ID, final_combidity2,
 ###########################################################################
 # TODO: the following code is to get Pre-op: final_data_store_diag_preop
 
-make_dummyvf_keep <- make_dummyvf[(make_dummyvf$phecode %in% c(80,591,567,994,150,480,501) | 
-                                     substring(make_dummyvf$phecode,1,3) %in% c(560)),]
+need_merge <- make_dummyvf[(make_dummyvf$phecode %in% c(80,591,567,994,150,480,501,
+                                                        276.12,394.7,411.2,427.4,429.9,444.1,458.2,681.6,720.1,
+                                                        797,994.21,150,509.1,740,994.2,251.1,290.2,797,585,585.1,585.2,
+                                                        276.1,276.11,276.13,276.4,276.42,281.12,452,452.2,
+                                                        281.12,286.2,386.9,415,345.1,386.9,577.2,599.8,285,285.1,285.2,
+                                                        285.21,285.22,285.3,285.8,198.3,
+                                                        198.6,276,290.1,427.2,737) | 
+                              substring(make_dummyvf$phecode,1,3) %in% c(560)),]
 
-need_merge <- make_dummyvf_keep
-
-#write.csv(unique(Diag$arb_person_id),file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/diag_postop/Diag_all_population.csv")
-check_diff <- setdiff(unique(Epic_data$arb_person_id),unique(Diag$arb_person_id))
-
-# check_diff
-# length(check_diff)
-
-#### indicator for diag ####
-inter_Epic <- intersect(unique(Epic_data$arb_person_id),unique(need_merge$arb_person_id))
-
-nsqip_diag_merge <-  merge(need_merge,Epic_data,by = "arb_person_id", all = TRUE)
+nsqip_diag_merge <-  full_join(need_merge,Epic_data_r,by = "arb_person_id")
 
 nsqip_diag_merge$DiagnosisDate[nsqip_diag_merge$DiagnosisDate==""] <- NA
 nsqip_diag_merge$as_date_diag <- as.Date(nsqip_diag_merge$DiagnosisDate)
 nsqip_diag_merge$SurgeryDate_asDate <- as.Date(nsqip_diag_merge$SurgeryDate_asDate)
-#table(nsqip_diag_merge$DiagnosisDate)
-
 nsqip_diag_merge$length_diag_operation <- nsqip_diag_merge$SurgeryDate_asDate-nsqip_diag_merge$as_date_diag
 
-
-nsqip_diag_merge$ind_rec_yesno[is.na(nsqip_diag_merge$length_diag_operation)] <- 0
-nsqip_diag_merge$ind_rec_yesno[!is.na(nsqip_diag_merge$length_diag_operation)] <- 1
-#sum(table(nsqip_diag_merge$ind_rec_yesno))
-#table(nsqip_diag_merge$ind_rec_yesno)
-
-nsqip_diag_merge$ind_rec_30days[nsqip_diag_merge$length_diag_operation <= 0 & nsqip_diag_merge$length_diag_operation >= -30] <- 1
-nsqip_diag_merge$ind_rec_30days[nsqip_diag_merge$length_diag_operation < -30 | nsqip_diag_merge$length_diag_operation > 0 ] <- 0
-
-
-nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation < -30 ] <- 0
-nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation <= 0 & nsqip_diag_merge$length_diag_operation >= -30 ] <- 1
-nsqip_diag_merge$ind_operative_rec[nsqip_diag_merge$length_diag_operation > 0 ] <- 2
-nsqip_diag_merge$ind_operative_rec[is.na(nsqip_diag_merge$length_diag_operation)] <- NA
+nsqip_diag_merge <- nsqip_diag_merge[!is.na(nsqip_diag_merge$DiagnosisCodeType),]
 
 nsqip_diag_merge$pre_op_diag <- ifelse(nsqip_diag_merge$length_diag_operation > 0 & nsqip_diag_merge$length_diag_operation <= 365,1,0)
 
+make_dummy <- nsqip_diag_merge[nsqip_diag_merge$pre_op_diag==1 & !is.na(nsqip_diag_merge$pre_op_diag),]
 
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, phecode)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(phecode, yesno, fill = 0)
 
-diag_cohort_icd10 <- nsqip_diag_merge[!is.na(nsqip_diag_merge$DiagnosisCodeType),]
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-#min(nsqip_diag_merge$SurgeryDate_asDate)
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
-ICD10_rec_excl <- diag_cohort_icd10
-#make_dummy <- diag_cohort_icd10[diag_cohort_icd10$ind_operative_rec==1 & !is.na(diag_cohort_icd10$ind_operative_rec),]
-make_dummy <- diag_cohort_icd10[diag_cohort_icd10$pre_op_diag==1 & !is.na(diag_cohort_icd10$pre_op_diag),]
+final_data[is.na(final_data)] <- 0 
 
-make_dummyvf_keep <- make_dummy
-
-#save(make_dummyvf_keep,file = "/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/diag_postop/make_dummyvf_keep.Rdata")
-#load("/Users/yaxuzhuang/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Katie Project/2022_0711/diag_postop/make_dummyvf_keep.Rdata")
-
-
-dummydf1 <- dummy_cols(make_dummyvf_keep, select_columns = "phecode")
-dficd1 <- dummydf1
-
-# colnames(dficd1)[283: 288]
-
-n <- which(colnames(dficd1) == "phecode_80")
-
-for (i in n:ncol(dficd1)) {
-  colnames(dficd1)[i] <- substring(colnames(dficd1)[i], 9)
-}
-
-for (i in n:ncol(dficd1)) {
-  dficd1[,i] <- ifelse(dficd1[,i] == 0, NA, 1)
-}
-
-
-dficd2 <- 
-  dficd1 %>% 
-  group_by(SurgeryID) %>%
-  fill_(names(dficd1)[n:ncol(dficd1)], .direction = "up") 
-
-dficd2 <- as.data.frame(dficd2)
-
-#dficd2$SurgeryID
-#View(dficd2)
-
-
-first_row_dficd3 <- dficd2[!duplicated(dficd2$SurgeryID),]
-
-#length(unique(post_operative_30days$SurgeryID))
-
-
-transpose_icd10 <- first_row_dficd3
-
-for (i in n:ncol(transpose_icd10)) {
-  transpose_icd10[,i][is.na(transpose_icd10[,i])] <- 0 
-}
-
-
-############################# step8: add back the patients who do not have ICD10 records within 30 days #####
-
-store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(make_dummyvf_keep$SurgeryID))
-
-
-comp_patients <- Epic_data[Epic_data$SurgeryID %in% store_patient_names_96,]
-
-unique_comp_patients <- comp_patients[!duplicated(comp_patients$SurgeryID),]
-
-#colnames(unique_comp_patients)[4] <- colnames(transpose_icd10)[4]
-#colnames(unique_comp_patients)[4]
-
-final_data <- rbind.fill(transpose_icd10,unique_comp_patients)
-final_data <- as.data.frame(final_data)
-
-
-#View(final_data[16000:16362,104:110])
-for (i in n:ncol(final_data)) {
-  final_data[,i][is.na(final_data[,i])] <- 0 
-}
-
-
-final_data_store <- final_data[,1:(ncol(final_data)-1)]
-
-#write.csv(final_data_store,file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/diag_postop/final_data_store_diag_preop.csv")
-
-final_data_store_diag_preop <- final_data_store
-
-saveRDS(final_data_store_diag_preop, paste0(fp_processed,
+saveRDS(final_data, paste0(fp_processed,
                                              "final_data_store_diag_preop.rds"))
 
 # glimpse(final_data_store_diag_preop)
@@ -444,23 +293,23 @@ rm(final_data_store, Diag, final_data, make_dummy, make_dummyvf,
 #########################################################################
 # TODO: this is to get final_data_store_lab_postop
 
-lab_positive <- Lab
-lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
-lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
-
-lab_positive$ind_positive[substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE] <- 0
-lab_positive$ind_positive[!(substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE)] <- 1
-lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
-
-
-lab <- lab_positive2[,-ncol(lab_positive2)]
+# lab_positive <- Lab
+# lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
+# lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
+# 
+# lab_positive$ind_positive[substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE] <- 0
+# lab_positive$ind_positive[!(substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE)] <- 1
+# lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
+# 
+# 
+# lab <- lab_positive2[,-ncol(lab_positive2)]
 
 # TODO: GET THE DATA file cultureAllInfections.csv
 cultures <- read.csv(file = "../data/cultureAllInfections.csv")
 # View(cultures)
 store_cult_names <- as.factor(cultures$LabPanelName)
 # TODO: may change from lab <- lab_positive2[,-ncol(lab_positive2)] to lab <- read.csv
-lab_cohort <- Lab[Lab$arb_person_id %in% Epic_data$arb_person_id,]
+lab_cohort_r <- Lab_r[Lab_r$arb_person_id %in% Epic_data_r$arb_person_id,]
 
 # TODO: include more urine culture here 
 lab_cdiff <- Lab %>% dplyr::select(LabPanelName) %>%
@@ -469,151 +318,94 @@ lab_cdiff <- Lab %>% dplyr::select(LabPanelName) %>%
 
 CDIFFs <- table(lab_cdiff) %>% names()
 
-lab_cohort <- lab_cohort[(lab_cohort$LabPanelName %in% c("AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC","URINE CULTURE - RWHS","AFB BLOOD CULTURE - SOUTH","SCREEN, YEAST SCREENING CULTURE",
-                                                         "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE","CHLAMYDIA CULTURE - MHS ONLY",
-                                                         " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
-                                                         "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
-                                                         "UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)","UA COMPLETE URINALYSIS (NO CULTURE REFLEX)",
-                                                         "UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED","URINE CULTURE","URINE CULTURE - MHS ONLY","UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)","CBC NO AUTO DIFF",
-                                  "CBC WITH AUTO DIFF","CBC WITH MANUAL DIFF IF AUTO FAILS (PERFORMABLE)",
-                                  "MAGNESIUM SERUM","ZZMORPHOLOGY","VANCOMYCIN TROUGH","RESPIRATORY CULTURE","QUANTITATIVE RESPIRATORY CULTURE - NORTH/SOUTH ONLY",
-                                  "CULTURE BLOOD, LAB COLL 2","(GEM) BLOOD GASES 4000","ARTERIAL BLOOD GAS","BLOOD GAS ARTERIAL WITH ELECTROLYTES","VENOUS BLOOD GAS",
-                                  "BLOOD CULTURE, FUNGAL (MOLD ONLY)", "BLOOD CULTURE, ISOLATOR BACTERIA", "BLOOD CULTURE, ISOLATOR FUNGUS",
-                                  "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR",
-                                  "URINE CULTURE,COMPREHENSIVE", "URINE CULTURE,PRENATAL, W/GBS",
-                                  "LAB USE ONLY - URINE CULTURE, ROUTINE", "LAB USE ONLY - URINE CULTURE RT 997870", 
-                                  "LAB USE ONLY - URINE CULTURE, PRENATAL, W/GBS RESULT")) 
-                         | (lab_cohort$LabPanelName %in% as.factor(cultures$LabPanelName)) |
-                           (lab_cohort$LabPanelName %in% CDIFFs) ,]
+# lab_cohort <- lab_cohort[(lab_cohort$LabPanelName %in% c("AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC","URINE CULTURE - RWHS","AFB BLOOD CULTURE - SOUTH","SCREEN, YEAST SCREENING CULTURE",
+#                                                          "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE","CHLAMYDIA CULTURE - MHS ONLY",
+#                                                          " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
+#                                                          "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
+#                                                          "UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)","UA COMPLETE URINALYSIS (NO CULTURE REFLEX)",
+#                                                          "UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED","URINE CULTURE","URINE CULTURE - MHS ONLY","UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)","CBC NO AUTO DIFF",
+#                                   "CBC WITH AUTO DIFF","CBC WITH MANUAL DIFF IF AUTO FAILS (PERFORMABLE)",
+#                                   "MAGNESIUM SERUM","ZZMORPHOLOGY","VANCOMYCIN TROUGH","RESPIRATORY CULTURE","QUANTITATIVE RESPIRATORY CULTURE - NORTH/SOUTH ONLY",
+#                                   "CULTURE BLOOD, LAB COLL 2","(GEM) BLOOD GASES 4000","ARTERIAL BLOOD GAS","BLOOD GAS ARTERIAL WITH ELECTROLYTES","VENOUS BLOOD GAS",
+#                                   "BLOOD CULTURE, FUNGAL (MOLD ONLY)", "BLOOD CULTURE, ISOLATOR BACTERIA", "BLOOD CULTURE, ISOLATOR FUNGUS",
+#                                   "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR",
+#                                   "URINE CULTURE,COMPREHENSIVE", "URINE CULTURE,PRENATAL, W/GBS",
+#                                   "LAB USE ONLY - URINE CULTURE, ROUTINE", "LAB USE ONLY - URINE CULTURE RT 997870", 
+#                                   "LAB USE ONLY - URINE CULTURE, PRENATAL, W/GBS RESULT")) |
+#                           (lab_cohort$LabPanelName %in% as.factor(cultures$LabPanelName)) |
+#                            (lab_cohort$LabPanelName %in% CDIFFs) ,]
+lab_cohort <- lab_cohort_r[(lab_cohort_r$LabPanelName %in% c("(GEM) BLOOD GASES 4000","ACUTE HEPATITIS PANEL","AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC)",
+                                                             "VANCOMYCIN TROUGH","AHG CROSSMATCH","ANTIBODY PATIENT INTERPS 1-5","ARTERIAL BLOOD GAS","BASIC METABOLIC PANEL",
+                                                             "TEG PANEL","CBC NO AUTO DIFF","POCT CRITICAL PANEL","CONGESTIVE HEART FAILURE BNP","D DIMER QUANTITATIVE","RESPIRATORY CULTURE","VANCOMYCIN TROUGH",
+                                                             "CBC NO AUTO DIFF","CKMB PANEL","ELECTROLYTES RANDOM URINE","SODIUM RANDOM URINE","UREA RANDOM URINE",
+                                                             "HEMATOCRIT","ISTAT TROPONIN","POCT TROPONIN","TROPONIN I",
+                                                             "LACTATE WHOLE BLOOD","NT-PROBNP","PLATELETS UNIT",
+                                                             "TEG PANEL",
+                                                             "AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC","URINE CULTURE - RWHS","AFB BLOOD CULTURE - SOUTH","SCREEN, YEAST SCREENING CULTURE",
+                                                             "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE","CHLAMYDIA CULTURE - MHS ONLY",
+                                                             " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
+                                                             "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
+                                                             "UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)","UA COMPLETE URINALYSIS (NO CULTURE REFLEX)",
+                                                             "UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED","URINE CULTURE","URINE CULTURE - MHS ONLY","UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)","CBC NO AUTO DIFF",
+                                                             "CBC WITH AUTO DIFF","CBC WITH MANUAL DIFF IF AUTO FAILS (PERFORMABLE)",
+                                                             "CDIFFICILE TOXIN PCR","C DIFFICILE BY PCR","MAGNESIUM SERUM","ZZMORPHOLOGY","VANCOMYCIN TROUGH","RESPIRATORY CULTURE","QUANTITATIVE RESPIRATORY CULTURE - NORTH/SOUTH ONLY",
+                                                             "CULTURE BLOOD, LAB COLL 2","(GEM) BLOOD GASES 4000","ARTERIAL BLOOD GAS","BLOOD GAS ARTERIAL WITH ELECTROLYTES","VENOUS BLOOD GAS",
+                                                             "POC(EPOC) ABG","POINT OF CARE TESTS",
+                                                             "POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE",
+                                                             "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM",
+                                                             # pasted your names here
+                                                             "AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC","URINE CULTURE - RWHS","AFB BLOOD CULTURE - SOUTH","SCREEN, YEAST SCREENING CULTURE",
+                                                             "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE","CHLAMYDIA CULTURE - MHS ONLY",
+                                                             " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
+                                                             "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
+                                                             "UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)","UA COMPLETE URINALYSIS (NO CULTURE REFLEX)",
+                                                             "UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED","URINE CULTURE","URINE CULTURE - MHS ONLY","UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)","CBC NO AUTO DIFF",
+                                                             "CBC WITH AUTO DIFF","CBC WITH MANUAL DIFF IF AUTO FAILS (PERFORMABLE)",
+                                                             "MAGNESIUM SERUM","ZZMORPHOLOGY","VANCOMYCIN TROUGH","RESPIRATORY CULTURE","QUANTITATIVE RESPIRATORY CULTURE - NORTH/SOUTH ONLY",
+                                                             "CULTURE BLOOD, LAB COLL 2","(GEM) BLOOD GASES 4000","ARTERIAL BLOOD GAS","BLOOD GAS ARTERIAL WITH ELECTROLYTES","VENOUS BLOOD GAS",
+                                                             "BLOOD CULTURE, FUNGAL (MOLD ONLY)", "BLOOD CULTURE, ISOLATOR BACTERIA", "BLOOD CULTURE, ISOLATOR FUNGUS",
+                                                             "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR",
+                                                             "URINE CULTURE,COMPREHENSIVE", "URINE CULTURE,PRENATAL, W/GBS",
+                                                             "LAB USE ONLY - URINE CULTURE, ROUTINE", "LAB USE ONLY - URINE CULTURE RT 997870", 
+                                                             "LAB USE ONLY - URINE CULTURE, PRENATAL, W/GBS RESULT")) | 
+                             (lab_cohort_r$LabPanelName %in% as.factor(cultures$LabPanelName))|
+                             (lab_cohort$LabPanelName %in% CDIFFs),]
 
 
 
 # glimpse(lab_cohort)
 
-a <- unique(lab_cohort$LabPanelName)
+# a <- unique(lab_cohort$LabPanelName)
 
-nsqip_lab_merge <-  merge(lab_cohort, Epic_data, by = c("arb_person_id", "arb_encounter_id"), all = TRUE)
+# nsqip_lab_merge <-  merge(lab_cohort, Epic_data, by = c("arb_person_id", "arb_encounter_id"), all = TRUE)
+nsqip_lab_merge <-  full_join(lab_cohort, Epic_data_r, by = c("arb_person_id"))
 
 nsqip_lab_merge$LabCollectedDate[nsqip_lab_merge$LabCollectedDate==""] <- NA
 nsqip_lab_merge$as_date_lab <- as.Date(nsqip_lab_merge$LabCollectedDate)
-
 nsqip_lab_merge$SurgeryDate_asDate <- as.Date(nsqip_lab_merge$SurgeryDate_asDate)
 nsqip_lab_merge$length_lab_operation <- nsqip_lab_merge$SurgeryDate_asDate-nsqip_lab_merge$as_date_lab
-
-nsqip_lab_merge$ind_labrec_yesno[is.na(nsqip_lab_merge$length_lab_operation)] <- 0
-nsqip_lab_merge$ind_labrec_yesno[!is.na(nsqip_lab_merge$length_lab_operation)] <- 1
-
-nsqip_lab_merge$ind_labrec_30days[nsqip_lab_merge$length_lab_operation <= 0 & nsqip_lab_merge$length_lab_operation >= -30] <- 1
-nsqip_lab_merge$ind_labrec_30days[nsqip_lab_merge$length_lab_operation < -30 | nsqip_lab_merge$length_lab_operation > 0 ] <- 0
 
 nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation < -30 ] <- 0
 nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation <= 0 & nsqip_lab_merge$length_lab_operation >= -30 ] <- 1
 nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation > 0 ] <- 2
 nsqip_lab_merge$ind_operative_rec[is.na(nsqip_lab_merge$length_lab_operation)] <- NA
 
+make_dummy <- nsqip_lab_merge[nsqip_lab_merge$ind_operative_rec==1 & !is.na(nsqip_lab_merge$ind_operative_rec),]
 
-df3 <- nsqip_lab_merge
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, LabPanelName)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(LabPanelName, yesno, fill = 0)
 
-include_pat <- df3
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-make_dummy <- include_pat[include_pat$ind_operative_rec==1 & !is.na(include_pat$ind_operative_rec),]
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
+final_data[is.na(final_data)] <- 0 
 
-lab_panel2 <- make_dummy[make_dummy$LabPanelName=="ZZMORPHOLOGY",]
-
-
-#AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC)
-#AEROBIC CULTURE - MHS ONLY
-#ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)
-#ANAEROBIC CULTURE - MHS ONLY
-#BLOOD CULTURE
-#CULTURE AEROBIC, ROUT, COMPOSITE
-#BLOOD CULTURE SET 2
-#CULTURE ANAEROBIC
-#BLOOD CULTURE POSITIVE WORKUP - RWHS
-#BLOOD CULTURE POS WORKUP HIGH#
-#CULTURE BLOOD, LAB COLL 1
-
-#UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)
-#UA COMPLETE URINALYSIS (NO CULTURE REFLEX)
-#UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED
-#URINE CULTURE
-#URINE CULTURE - MHS ONLY
-#UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)
-
-#CDIFFICILE TOXIN PCR
-#C DIFFICILE BY PCR
-
-make_dummy_keep_lbNames <- make_dummy
-
-
-make_dummy_keep_lbNames <- as.data.frame(make_dummy_keep_lbNames)
-
-
-dummydf1 <- dummy_cols(make_dummy_keep_lbNames, select_columns = "LabPanelName")
-
-
-dficd1 <- dummydf1
-
-# colnames(dficd1)[284:289]
-# ncol(dficd1)
-
-# colnames(dficd1)[316:ncol(dficd1)]
-
-# n <- which(colnames(dficd1) == "LabPanelName_ACANTHAMOEBA CULTURE")
-# TODO: fix this to the following
-n <- grep("^LabPanelName_", colnames(dficd1))[1]
-
-for (i in n:ncol(dficd1)) {
-  colnames(dficd1)[i] <- substring(colnames(dficd1)[i], 14)
-}
-
-for (i in n:ncol(dficd1)) {
-  dficd1[,i] <- ifelse(dficd1[,i] == 0, NA, 1)
-}
-
-dficd2 <- 
-  dficd1 %>% 
-  group_by(SurgeryID) %>%
-  fill_(names(dficd1)[n:ncol(dficd1)], .direction = "up") 
-
-dficd2 <- as.data.frame(dficd2)
-
-
-first_row_dficd3 <- dficd2[!duplicated(dficd2$SurgeryID),]
-
-#### 16261 #####
-
-#length(unique(post_operative_30days$SurgeryID))
-
-transpose_icd10 <- first_row_dficd3
-
-for (i in n:ncol(transpose_icd10)) {
-  transpose_icd10[,i][is.na(transpose_icd10[,i])] <- 0 
-  
-}
-
-
-############################# step8: add back the patients who do not have ICD10 records within 30 days #####
-comb_surg_id <- c(transpose_icd10$SurgeryID)
-store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),comb_surg_id)
-
-comp_patients <- Epic_data[Epic_data$SurgeryID %in% store_patient_names_96,]
-
-unique_comp_patients <- comp_patients[!duplicated(comp_patients$SurgeryID),]
-
-final_data <- rbind.fill(transpose_icd10,unique_comp_patients)
-final_data <- as.data.frame(final_data)
-
-#View(final_data[16000:16362,104:110])
-for (i in n:ncol(final_data)) {
-  final_data[,i][is.na(final_data[,i])] <- 0 
-}
-
-#final_data_store <- final_data
-final_data_store_lab_postop <- final_data
-
-saveRDS(final_data_store_lab_postop, paste0(fp_processed,
+saveRDS(final_data, paste0(fp_processed,
                                        "final_data_store_lab_postop.rds"))
 
 #########################################################################
@@ -621,18 +413,26 @@ saveRDS(final_data_store_lab_postop, paste0(fp_processed,
 
 # TODO: include more Blood culture
 
-lab_cohort <- lab_cohort[(lab_cohort$LabPanelName %in% c("AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC",
+lab_cohort <- lab_cohort_r[(lab_cohort_r$LabPanelName %in% c("AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC",
                                 "AEROBIC CULTURE - MHS ONLY", "AFB BLOOD CULTURE - SOUTH", "ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE",
                     " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
                           "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
                     "BLOOD CULTURE, FUNGAL (MOLD ONLY)", "BLOOD CULTURE, ISOLATOR BACTERIA", "BLOOD CULTURE, ISOLATOR FUNGUS",
-                    "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR")),]
+                    "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR",
+                    # pasted my here
+                    "AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC",
+                    "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE",
+                    " ANAEROBIC CULTURE - MHS ONLY","BLOOD CULTURE","CULTURE AEROBIC, ROUT, COMPOSITE","BLOOD CULTURE SET 2","BLOOD CULTURE POS WORKUP PEDS",
+                    "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
+                    "ANTIBODY PATIENT INTERPS 1-5","POTASSIUM SERUM/PLASMA","PR ASSAY OF SERUM POTASSIUM","I STAT POTASSIUM",
+                    "POCT POTASSIUM","POTASSIUM WHOLE BLOOD",
+                    "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),]
 
 
-a <- unique(lab_cohort$LabPanelName)
+#a <- unique(lab_cohort$LabPanelName)
 
 #### indicator for diag ####
-nsqip_lab_merge <- merge(lab_cohort,Epic_data,by = "arb_person_id", all = TRUE)
+nsqip_lab_merge <-  full_join(lab_cohort, Epic_data_r, by = c("arb_person_id"))
 
 
 #save(nsqip_lab_merge,file = "/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/preop_lab/nsqip_lab_merge.Rdata")
@@ -643,122 +443,26 @@ nsqip_lab_merge$as_date_lab <- as.Date(nsqip_lab_merge$LabCollectedDate)
 nsqip_lab_merge$SurgeryDate_asDate <- as.Date(nsqip_lab_merge$SurgeryDate_asDate)
 nsqip_lab_merge$length_lab_operation <- nsqip_lab_merge$SurgeryDate_asDate-nsqip_lab_merge$as_date_lab
 
-nsqip_lab_merge$ind_labrec_yesno[is.na(nsqip_lab_merge$length_lab_operation)] <- 0
-nsqip_lab_merge$ind_labrec_yesno[!is.na(nsqip_lab_merge$length_lab_operation)] <- 1
-
-
-nsqip_lab_merge$ind_labrec_30days[nsqip_lab_merge$length_lab_operation <= 0 & nsqip_lab_merge$length_lab_operation >= -30] <- 1
-nsqip_lab_merge$ind_labrec_30days[nsqip_lab_merge$length_lab_operation < -30 | nsqip_lab_merge$length_lab_operation > 0 ] <- 0
-
-nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation < -30 ] <- 0
-nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation <= 0 & nsqip_lab_merge$length_lab_operation >= -30 ] <- 1
-nsqip_lab_merge$ind_operative_rec[nsqip_lab_merge$length_lab_operation > 0 ] <- 2
-nsqip_lab_merge$ind_operative_rec[is.na(nsqip_lab_merge$length_lab_operation)] <- NA
-
 nsqip_lab_merge$pre_op_lab <- ifelse(nsqip_lab_merge$length_lab_operation > 0 & nsqip_lab_merge$length_lab_operation <= 365,1,0)
 
+make_dummy <- nsqip_lab_merge[nsqip_lab_merge$pre_op_lab==1 & !is.na(nsqip_lab_merge$pre_op_lab),]
+# saveRDS(make_dummy, "data/make_dummy.rds")
+# lab_panel2 <- make_dummy[make_dummy$LabPanelName=="ZZMORPHOLOGY",]
 
-df3 <- nsqip_lab_merge
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, LabPanelName)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(LabPanelName, yesno, fill = 0)
 
-include_pat <- df3
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-#make_dummy <- include_pat[include_pat$ind_operative_rec==1 & !is.na(include_pat$ind_operative_rec),]
-make_dummy <- include_pat[include_pat$pre_op_lab==1 & !is.na(include_pat$pre_op_lab),]
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
-lab_panel2 <- make_dummy[make_dummy$LabPanelName=="ZZMORPHOLOGY",]
+final_data[is.na(final_data)] <- 0 
 
-
-#AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC)
-#AEROBIC CULTURE - MHS ONLY
-#ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)
-#ANAEROBIC CULTURE - MHS ONLY
-#BLOOD CULTURE
-#CULTURE AEROBIC, ROUT, COMPOSITE
-#BLOOD CULTURE SET 2
-#CULTURE ANAEROBIC
-#BLOOD CULTURE POSITIVE WORKUP - RWHS
-#BLOOD CULTURE POS WORKUP HIGH#
-#CULTURE BLOOD, LAB COLL 1
-
-#UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)
-#UA COMPLETE URINALYSIS (NO CULTURE REFLEX)
-#UA COMPLETE URINALYSIS W/ CULTURE REFLEX IF INDICATED
-#URINE CULTURE
-#URINE CULTURE - MHS ONLY
-#UA MICROSCOPIC ONLY (NO CULTURE REFLEX,EXCEPT EPH)
-
-#CDIFFICILE TOXIN PCR
-#C DIFFICILE BY PCR
-
-make_dummy_keep_lbNames <- make_dummy
-
-make_dummy_keep_lbNames <- as.data.frame(make_dummy_keep_lbNames)
-
-#dummydf1 <- dummy.data.frame(make_dummy_keep_lbNames, names = c("LabPanelName") , sep = "")
-dummydf1 <- dummy_cols(make_dummy_keep_lbNames, select_columns = "LabPanelName")
-
-
-dficd1 <- dummydf1
-
-
-# colnames(dficd1)[285 : 292]
-n <- grep("^LabPanelName_", colnames(dficd1))[1]
-
-for (i in n:ncol(dficd1)) {
-  colnames(dficd1)[i] <- substring(colnames(dficd1)[i], 14)
-}
-
-for (i in n:ncol(dficd1)) {
-  dficd1[,i] <- ifelse(dficd1[,i] == 0, NA, 1)
-}
-
-dficd2 <- 
-  dficd1 %>% 
-  group_by(SurgeryID) %>%
-  fill_(names(dficd1)[n:ncol(dficd1)], .direction = "up") 
-
-dficd2 <- as.data.frame(dficd2)
-
-
-
-first_row_dficd3 <- dficd2[!duplicated(dficd2$SurgeryID),]
-
-#### 16261 #####
-
-#length(unique(post_operative_30days$SurgeryID))
-
-
-transpose_icd10 <- first_row_dficd3
-
-for (i in n:ncol(transpose_icd10)) {
-  transpose_icd10[,i][is.na(transpose_icd10[,i])] <- 0 
-}
-
-############################# step8: add back the patients who do not have ICD10 records within 30 days #####
-store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(make_dummy_keep_lbNames$SurgeryID))
-
-
-comp_patients <- Epic_data[Epic_data$SurgeryID %in% store_patient_names_96,]
-
-
-unique_comp_patients <- comp_patients[!duplicated(comp_patients$SurgeryID),]
-
-#colnames(unique_comp_patients)[4] <- colnames(transpose_icd10)[4]
-#colnames(unique_comp_patients)[4]
-
-final_data <- rbind.fill(transpose_icd10,unique_comp_patients)
-final_data <- as.data.frame(final_data)
-
-#View(final_data[16000:16362,104:110])
-for (i in n:ncol(final_data)) {
-  final_data[,i][is.na(final_data[,i])] <- 0 
-  
-}
-
-
-final_data_store_preop_lab <- final_data_store <- final_data
-
-saveRDS(final_data_store_preop_lab, paste0(fp_processed,
+saveRDS(final_data, paste0(fp_processed,
                                             "final_data_store_preop_lab.rds"))
 
 rm(Lab_p1, Lab_p2, final_data, comp_patients, unique_comp_patients, transpose_icd10,
@@ -768,27 +472,29 @@ rm(Lab_p1, Lab_p2, final_data, comp_patients, unique_comp_patients, transpose_ic
 
 #################################################################################
 ## TODO: final_data_store_medi_postop
+# MEDI post op are seperated into infectious and non-infectious
+# Because they use different class TherapeuticClass for inf, PharmaceuticalClass for non-inf
 
 # Medi <- read.csv(file = "data/C2730_Table7_Medications_20240223.csv")
 
 #write.csv(unique(Medi$arb_person_id),file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/medi_postop/Medi_all_population.csv")
 #write.csv(unique(Epic_data$arb_person_id),file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/medi_postop/Surgery_all_population.csv")
 
-check_diff <- setdiff(unique(Epic_data$arb_person_id),unique(Medi$arb_person_id))
+#check_diff <- setdiff(unique(Epic_data$arb_person_id),unique(Medi$arb_person_id))
 
 
-medi_cohort <- Medi[Medi$arb_person_id %in% Epic_data$arb_person_id,]
+medi_cohort_r <- Medi_r[Medi_r$arb_person_id %in% Epic_data_r$arb_person_id,]
 
-medi_cohort <- medi_cohort[medi_cohort$TherapeuticClass=="ANTIBIOTICS",]
+medi_cohort <- medi_cohort_r[medi_cohort_r$TherapeuticClass=="ANTIBIOTICS",]
 
-nsqip_medi_merge <- merge(medi_cohort,Epic_data,by = "arb_person_id", all = TRUE)
+nsqip_medi_merge <- full_join(medi_cohort,Epic_data_r,by = "arb_person_id")
 
 ### Validation ###
-
-
-dim_epic <- Epic_data[Epic_data$arb_person_id==1590586, ]
-dim_medi <- medi_cohort[medi_cohort$arb_person_id==1590586, ]
-dim_nsqip_medi_merge <- nsqip_medi_merge[nsqip_medi_merge$arb_person_id==1590586, ]
+# 
+# 
+# dim_epic <- Epic_data[Epic_data$arb_person_id==1590586, ]
+# dim_medi <- medi_cohort[medi_cohort$arb_person_id==1590586, ]
+# dim_nsqip_medi_merge <- nsqip_medi_merge[nsqip_medi_merge$arb_person_id==1590586, ]
 
 
 nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDate)
@@ -797,22 +503,13 @@ nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
 nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
 #View(nsqip_medi_merge[,c("as_date_operation","as_date_med","length_med_operation")])
 
-nsqip_medi_merge$ind_medrec_yesno[is.na(nsqip_medi_merge$length_med_operation)] <- 0
-nsqip_medi_merge$ind_medrec_yesno[!is.na(nsqip_medi_merge$length_med_operation)] <- 1
-
-nsqip_medi_merge$ind_medrec_30days[nsqip_medi_merge$length_med_operation <= 0 & nsqip_medi_merge$length_med_operation >= -30] <- 1
-nsqip_medi_merge$ind_medrec_30days[nsqip_medi_merge$length_med_operation < -30 | nsqip_medi_merge$length_med_operation > 0 ] <- 0
 
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation < -30 ] <- 0
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation <= -2 & nsqip_medi_merge$length_med_operation >= -30 ] <- 1
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation > -2 ] <- 2
 nsqip_medi_merge$ind_operative_rec[is.na(nsqip_medi_merge$length_med_operation)] <- NA
 
-df3 <- nsqip_medi_merge
-
-include_pat <- df3
-
-make_dummy <- include_pat[include_pat$ind_operative_rec==1 & !is.na(include_pat$ind_operative_rec),]
+make_dummy <- nsqip_medi_merge[nsqip_medi_merge$ind_operative_rec==1 & !is.na(nsqip_medi_merge$ind_operative_rec),]
 make_dummy$AntiBiotics_YN <- 1
 
 transpose_icd10 <- make_dummy[!duplicated(make_dummy$SurgeryID),]
@@ -834,12 +531,58 @@ saveRDS(final_data_store_medi_postop, paste0(fp_processed,
 rm(final_data)
 
 ###############################################################################
+## TODO: final_data_store_medi_postop_other_comp
+
+medi_cohort <- medi_cohort_r[medi_cohort_r$PharmaceuticalClass %in% c("CALCIUM REPLACEMENT","PLASMA EXPANDERS","ADRENERGIC AGENTS,CATECHOLAMINES","ANTICOAGULANTS,COUMARIN TYPE","ANTIDIURETIC AND VASOPRESSOR HORMONES","ANTIEMETIC/ANTIVERTIGO AGENTS","BETA-ADRENERGIC AGENTS","BICARBONATE PRODUCING/CONTAINING AGENTS","ERYTHROPOIESIS-STIMULATING AGENTS",
+                                "EXPECTORANTS","FOLIC ACID PREPARATIONS","GENERAL ANESTHETICS,INJECTABLE-BENZODIAZEPINE TYPE","GLUCOCORTICOIDS","HEPARIN AND RELATED PREPARATIONS","IRON REPLACEMENT","LAXATIVES, LOCAL/RECTAL",
+                                "LOOP DIURETICS","NSAIDS, CYCLOOXYGENASE INHIBITOR - TYPE ANALGESICS","TOPICAL ANTIFUNGALS","ABSORBABLE SULFONAMIDE ANTIBACTERIAL AGENTS","NITROFURAN DERIVATIVES ANTIBACTERIAL AGENTS","PENICILLIN ANTIBIOTICS","QUINOLONE ANTIBIOTICS","DIALYSIS SOLUTIONS","POC(EPOC) ABG","POINT OF CARE TESTS",
+                                "POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE",
+                                "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM"),]
+
+nsqip_medi_merge <- full_join(medi_cohort,Epic_data,by = "arb_person_id")
+
+nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDate)
+nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
+
+nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
+
+nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation < -30 ] <- 0
+nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation <= 0 & nsqip_medi_merge$length_med_operation >= -30 ] <- 1
+nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation > 0 ] <- 2
+nsqip_medi_merge$ind_operative_rec[is.na(nsqip_medi_merge$length_med_operation)] <- NA
+
+make_dummy <- nsqip_medi_merge[nsqip_medi_merge$ind_operative_rec==1 & !is.na(nsqip_medi_merge$ind_operative_rec),]
+# saveRDS(make_dummy, "data/make_dummy_med.rds")
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, PharmaceuticalClass)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(PharmaceuticalClass, yesno, fill = 0)
+
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
+
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
+
+final_data[is.na(final_data)] <- 0 
+
+saveRDS(final_data, paste0(fp_processed,
+                                             "final_data_store_medi_postop_other_comp.rds"))
+
+###############################################################################
 ## TODO: final_data_store_medi_preop
 
-medi_cohort <- Medi[Medi$arb_person_id %in% Epic_data$arb_person_id,]
-medi_cohort <- medi_cohort[(medi_cohort$PharmaceuticalClass=="URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT"),]
+#medi_cohort <- Medi[Medi$arb_person_id %in% Epic_data$arb_person_id,]
+#medi_cohort <- medi_cohort_r[(medi_cohort_r$PharmaceuticalClass=="URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT"),]
+medi_cohort <- medi_cohort_r[(medi_cohort_r$PharmaceuticalClass%in%c("URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT",
+                                                                     "ANTI-OBESITY - ANOREXIC AGENTS",
+                                                                     "ANTIHYPERTENSIVES, ACE INHIBITORS",
+                                                                     "FOLIC ACID PREPARATIONS",
+                                                                     "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)",
+                                                                     "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", 
+                                                                     "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),]
 
-nsqip_medi_merge <- merge(medi_cohort,Epic_data,by = "arb_person_id", all = TRUE)
+nsqip_medi_merge <- full_join(medi_cohort,Epic_data,by = "arb_person_id")
 
 nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
 nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDate)
@@ -847,112 +590,154 @@ nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDa
 nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
 #View(nsqip_medi_merge[,c("as_date_operation","as_date_med","length_med_operation")])
 
-nsqip_medi_merge$ind_medrec_yesno[is.na(nsqip_medi_merge$length_med_operation)] <- 0
-nsqip_medi_merge$ind_medrec_yesno[!is.na(nsqip_medi_merge$length_med_operation)] <- 1
-
-nsqip_medi_merge$ind_medrec_30days[nsqip_medi_merge$length_med_operation <= 0 & nsqip_medi_merge$length_med_operation >= -30] <- 1
-nsqip_medi_merge$ind_medrec_30days[nsqip_medi_merge$length_med_operation < -30 | nsqip_medi_merge$length_med_operation > 0 ] <- 0
-
-nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation < -30 ] <- 0
-nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation <= 0 & nsqip_medi_merge$length_med_operation >= -30 ] <- 1
-nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation > 0 ] <- 2
-nsqip_medi_merge$ind_operative_rec[is.na(nsqip_medi_merge$length_med_operation)] <- NA
 
 nsqip_medi_merge$pre_op_med <- ifelse(nsqip_medi_merge$length_med_operation > 0 & nsqip_medi_merge$length_med_operation <= 365,1,0)
 
-df3 <- nsqip_medi_merge
-include_pat <- df3
 
-make_dummy <- include_pat[include_pat$pre_op_med==1 & !is.na(include_pat$pre_op_med),]
+make_dummy <- nsqip_medi_merge[nsqip_medi_merge$pre_op_proc==1 & !is.na(nsqip_medi_merge$pre_op_proc),]
 #make_dummy <- include_pat[include_pat$ind_operative_rec==1 & !is.na(include_pat$ind_operative_rec),]
 
-make_dummy$`URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT` <- 1
-transpose_icd10 <- make_dummy[!duplicated(make_dummy$arb_person_id),]
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, PharmaceuticalClass)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  spread(PharmaceuticalClass, yesno, fill = 0)
 
-store_patient_names_96 <- setdiff(unique(Epic_data$arb_person_id),unique(transpose_icd10$arb_person_id))
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-comp_patients <- as.data.frame(cbind(store_patient_names_96,0))
-colnames(comp_patients) <- c("arb_person_id","URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT")
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
-final_data <- rbind.fill(transpose_icd10,comp_patients)
-final_data$`URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT`[is.na(final_data$`URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT`)] <- 0 
+final_data[is.na(final_data)] <- 0 
 
-final_data_store_medi_preop <- final_data[,c("arb_person_id","URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT")]
-
-#write.csv(final_data_store,file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/medi_postop/final_data_store_medi_preop.csv")
-
-saveRDS(final_data_store_medi_preop, paste0(fp_processed,
+saveRDS(final_data, paste0(fp_processed,
                                              "final_data_store_medi_preop.rds"))
 
 rm(Medi, final_data)
 
 ####################################################################################
-## TODO: final_data_store_proc_preop
-# Proc <- read.csv(file = "data/C2730_Table5_Procedures_20240223.csv")
+## TODO: final_data_store_proc_postop
 
+proc_cohort_r <- Proc_r[Proc_r$arb_person_id %in% Epic_data_r$arb_person_id,]
+proc_cohort <- proc_cohort_r[(proc_cohort_r$ProcedureName %in% c("CARD DX ECHO COMPLETE TTE TRANSTHORACIC STANDARD",
+                                                                 "CARD DX ECHO LIMITED TTE 2D TRANSTHORACIC FOLLOW UP FOCUSED EXAM","CARD DX ECHO TRANSESOPHAGEAL TEE",
+                                                                 "DOBUTAMINE STRESS ECHO PROTOCOL","ECHO ADULT COMPLETE TTE","ECHO ADULT LIMITED TTE","ECHO TRANSESOPHAGEAL TEE",
+                                                                 "ECHO WITH DEFINITY CONTRAST PROTOCOL","OS CV ECHO COMPARE-NO READ","PR DOPPLER ECHO HEART,LIMITED,F/U","PR ECHO HEART XTHORACIC,COMPLETE W DOPPLER",
+                                                                 "PR ECHO HEART XTHORACIC,LIMITED","PR ECHO TRANSESOPHAG R-T 2D W/PRB IMG ACQUISJ I&R","PR ECHO TTHRC R-T 2D W/WO M-MODE REST&STRS CONT ECG",
+                                                                 "STRESS ECHO - UCH","STRESS ECHO DOBUTAMINE","Change Endotracheal Airway in Trachea, External Approach","",
+                                                                 "INSERT ENDOTRACHEAL TUBE","Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening",
+                                                                 "Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening Endoscopic","PR ASSAY OF TROPONIN, QUANT",
+                                                                 ".CT ABD/PELVIS WWO CONTRAST UROGRAM","ABN ONLY CT ABD & PELVIS W/O CONTRAST","ABN ONLY CT ABD&PELV 1+ SECTION/REGNS","CT ABD W/WO, PELVIS WITH CONT",
+                                                                 "CT ABD/PELVIS W CONTRAST","CT ABD/PELVIS W/WO CONTRAST","CT ABD/PELVIS WITHOUT CONTRAST","CT ANGIO CHEST/ABD/PELVIS",
+                                                                 "CT CHEST/ABD W CONTRAST","CT CHEST/ABD W/WO CONTRAST","CT CHEST/ABD WO CONTRAST","CT CHEST/ABD/PELV W CONTRAST",
+                                                                 "CT CHEST/ABD/PELV W/WO CONTRAST","CT CHEST/ABD/PELV WO CONTRAST","CT CHEST/PELV W, ABD W/WO CONTRAST","PR CT ANGIO ABD&PLVIS CNTRST MTRL W/WO CNTRST IMGES",
+                                                                 "PR CT ANGIO, ABD, COMBO,INCL IMAGE PROC","CT ABDOMEN PELVIS LIVER MASS W/WO CONTRAST","CT ANGIO ABDOMEN/PELVIS - BODY",
+                                                                 "CT ANGIOGRAPHY PELVIS","CT CHEST ABDOMEN W/WO PELVIS W CONTRAST","CT CTA PULMONARY, ABDOMEN W, PELVIS W","CT PELVIS W/O CONTRAST",
+                                                                 "CT PELVIS W/O CONTRAST-MUSC","CT PELVIS W/WO CONTRAST","CT PELVIS WITH CONTRAST","CT PELVIS WITH CONTRAST-MUSC","HEMODIALYSIS","INSERTION PERITONEAL DIALYSIS CATHETER",
+                                                                 "PERITONEAL DIALYSIS","PR DIALYSIS PROCEDURE","PR HEMODIALYSIS PROCEDURE W/ PHYS/QHP EVALUATION","PR UNSCHED DIALYSIS ESRD PT HOS","CPAP OVERNIGHT",
+                                                                 "INSERT ARTERIAL LINE","VTE PLATELET MONITORING FOR IV UFH PATIENTS","XR CHEST 2 VIEW (PA,LAT)","PR ASSAY OF TROPONIN, QUANT","ADMIT PATIENT",
+                                                                 "FEMORAL NERVE BLOCK","IP CONSULT TO DISCHARGE PLANNING","IP CONSULT TO SOCIAL WORK","OT EVAL AND TREAT","PT EVAL AND TREAT",
+                                                                 "RT HOME OXYGEN EVALUATION (INPATIENT ORDER)","PR INJ, PROPOFOL, 10 MG","RETURN PATIENT",".XR CHEST SINGLE (AP)","XR CHEST SINGLE VIEW",
+                                                                 "Change Endotracheal Airway in Trachea, External Approach","INSERT ENDOTRACHEAL TUBE","Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening",
+                                                                 "Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening Endoscopic","RESTRAINTS NON-BEHAVIORAL","TRANSFER PATIENT","IP CONSULT TO PHARMACY - TPN",
+                                                                 "IP CONSULT TO WOUND / OSTOMY / SKIN TEAM","US RENAL (KIDNEYS/BLADDER ONLY)","US UPPER EXTREMITY VENOUS BIL","WEIGH PATIENT",".XR CHEST SINGLE (PA)",
+                                                                 "CTA CHEST FOR PE","OPN RT HEMICOLECTOMY NEC","PR INJ ENOXAPARIN SODIUM 10 MG","US UPPER EXTREMITY VENOUS UNILATERAL","PREADMISSION ADMIT ORDER - RN TO RELEASE",
+                                                                 "UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION","INCISION AND DRAINAGE HEAD/NECK","LAST TYPE & SCREEN (CLOT) STATUS","PR BACTERIA IDENTIFICATION, AEROBIC ISOLATE",
+                                                                 "ED BLOOD TRANSFUSION PROCEDURE","PACKED CELL TRANSFUSION","PLATELET TRANSFUSION","SERUM TRANSFUSION NEC","TRANSFUSION NEC","COAG FACTOR TRANSFUSION","PR BLOOD TRANSFUSION SERVICE",
+                                                                 "AMBULATORY REFERRAL OIC BLOOD AND/OR BLOOD PRODUCT TRANSFUSION","NURSE INSTRUCTIONS TRANSFUSION REACTION OIC","BLOOD TRANSFUSION: USE ORDER SET ONLY. IF EMERGENT, CALL BLOOD BANK.",
+                                                                 "MASSIVE TRANSFUSION PROTOCOL","PR CHG TRANSFUSION PROCEDURE","PR EXCHANGE TRANSFUSION, OTHR","TRANSFUSE RED BLOOD CELLS","TRANSFUSE CRYOPRECIPITATE",
+                                                                 "TRANSFUSE PLATELETS","TRANSFUSE WHOLE BLOOD","TRANSFUSE RED BLOOD CELLS (IN ML)","TRANSFUSE PLASMA (IN ML)","TRANSFUSE CRYOPRECIPITATE (IN ML)",
+                                                                 "Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach","PARTIAL HIP REPLACEMENT",
+                                                                 "PREPARE PLATELETS FOR TRANSFUSION", 
+                                                                 "RBC UNIT",
+                                                                 "POC(EPOC) ABG","POINT OF CARE TESTS",
+                                                                 "POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE",
+                                                                 "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM")),] # problem
+#proc_cohort[proc_cohort$ProcedureName == "ED BLOOD TRANSFUSION PROCEDURE",]
+nsqip_proc_merge <- full_join(proc_cohort,Epic_data,by = "arb_person_id")
 
-
-proc_cohort <- Proc[Proc$arb_person_id %in% Epic_data$arb_person_id,]
-proc_cohort <- proc_cohort[(proc_cohort$ProcedureName=="OS CT BODY COMPARE-NO READ"),] # problem
-# glimpse(proc_cohort)
-
-nsqip_proc_merge <- merge(proc_cohort,Epic_data,by = "arb_person_id", all = TRUE)
-
-# to order date, comp old dataset, use table 10 for UCH patients, find cpt codes for the vars
 nsqip_proc_merge$ProcedureEventDate[nsqip_proc_merge$ProcedureEventDate==""] <- NA
-# nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureEventDate)
-nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureOrderDate)
+nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureEventDate)
 nsqip_proc_merge$SurgeryDate_asDate <- as.Date(nsqip_proc_merge$SurgeryDate_asDate)
 
 
 nsqip_proc_merge$length_proc_operation <- nsqip_proc_merge$SurgeryDate_asDate-nsqip_proc_merge$as_date_proc
 #View(nsqip_proc_merge[,c("ProcedureDate","as_date_proc","as_date_operation","length_proc_operation")])
 
-nsqip_proc_merge$ind_procrec_yesno[is.na(nsqip_proc_merge$length_proc_operation)] <- 0
-nsqip_proc_merge$ind_procrec_yesno[!is.na(nsqip_proc_merge$length_proc_operation)] <- 1
-
-nsqip_proc_merge$ind_procrec_30days[nsqip_proc_merge$length_proc_operation <= 0 & nsqip_proc_merge$length_proc_operation >= -30] <- 1
-nsqip_proc_merge$ind_procrec_30days[nsqip_proc_merge$length_proc_operation < -30 | nsqip_proc_merge$length_proc_operation > 0 ] <- 0
-
 nsqip_proc_merge$ind_operative_rec[nsqip_proc_merge$length_proc_operation < -30 ] <- 0
 nsqip_proc_merge$ind_operative_rec[nsqip_proc_merge$length_proc_operation <= 0 & nsqip_proc_merge$length_proc_operation >= -30 ] <- 1
 nsqip_proc_merge$ind_operative_rec[nsqip_proc_merge$length_proc_operation > 0 ] <- 2
 nsqip_proc_merge$ind_operative_rec[is.na(nsqip_proc_merge$length_proc_operation)] <- NA
 
-nsqip_proc_merge$pre_op_proc <- ifelse(nsqip_proc_merge$length_proc_operation > 0 & nsqip_proc_merge$length_proc_operation <= 365,1,0)
+make_dummy <- nsqip_proc_merge[nsqip_proc_merge$ind_operative_rec==1 & !is.na(nsqip_proc_merge$ind_operative_rec),]
 
-df3 <- nsqip_proc_merge
-include_pat <- df3
-make_dummy <- include_pat[include_pat$pre_op_proc==1 & !is.na(include_pat$pre_op_proc),]
-
-make_dummy$`OS CT BODY COMPARE-NO READ` <- 1
-
-
-
-transpose_icd10 <- make_dummy[!duplicated(make_dummy$SurgeryID),]
-
-############################# step8: add back the patients who do not have ICD10 records within 30 days #####
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, ProcedureName)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  filter(!(ProcedureName == ""))%>%
+  spread(key = ProcedureName, value = yesno, fill = 0)
 
 store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
 
-######
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
 
-comp_patients <- Epic_data[Epic_data$SurgeryID %in% store_patient_names_96,]
+final_data[is.na(final_data)] <- 0 
 
+saveRDS(final_data, paste0(fp_processed,
+                                                 "final_data_store_proc_postop.rds"))
 
-unique_comp_patients <- comp_patients[!duplicated(comp_patients$SurgeryID),]
+####################################################################################
+## TODO: final_data_store_proc_preop
+# Proc <- read.csv(file = "data/C2730_Table5_Procedures_20240223.csv")
 
+proc_cohort <- proc_cohort_r[(proc_cohort_r$ProcedureName %in% c("OS CT BODY COMPARE-NO READ",
+                                                                 "OS CT BODY COMPARE-NO READ","CT CHEST/PELV W, ABD W/WO CONTRAST",".PET/CT WHOLE BODY NO IV CONTRAST",
+                                                                 "ABN ONLY CT ABD & PELVIS W/O CONTRAST","ABN ONLY CT ABD&PELV 1+ SECTION/REGNS","Computerized Tomography (CT Scan) of Abdomen and Pelvis using Low Osmolar Contrast",
+                                                                 "CT ABD W/WO, PELVIS WITH CONT","CT ABD/PELVIS W CONTRAST","CT ABD/PELVIS W/WO CONTRAST","CT ABD/PELVIS WITHOUT CONTRAST","CT ABDO RETRO FINE NEEDLE ASPIRATION",
+                                                                 "CT ABDOMEN W AND WO CONTRAST","CT ABDOMEN WITH CONTRAST","CT ABDOMEN WITHOUT CONTRAST","CT ABDOMEN/RET MASS BIOPSY","CT ANGIO ABDOMEN",
+                                                                 "CT CHEST W, ABD W/WO CONTRAST","CT CHEST/ABD W CONTRAST","CT CHEST/ABD WO CONTRAST","CT CHEST/ABD/PELV W CONTRAST",
+                                                                 "CT CHEST/ABD/PELV W/WO CONTRAST","CT CHEST/ABD/PELV WO CONTRAST","CT CHEST/PELV W, ABD W/WO CONTRAST",
+                                                                 "OS CT ABDOMEN COMPARE-NO READ","OS CT BODY COMPARE-NO READ","OS CT BODY INTERPRETATION","PR CT SCAN OF ABDOMEN COMBO",
+                                                                 "PR CT SCAN OF ABDOMEN CONTRAST","PR CT SCAN OF PELVIS COMBO","PR CT SCAN OF PELVIS CONTRAST","PR CT SCAN,ABDOMEN,W/O CONTRAST",
+                                                                 "OS CT CERVICAL SPINE COMPARE-NO READ","CT CERVICAL SPINE POST MYELO","CT CERVICAL SPINE RECONSTRUCTION","CT CERVICAL SPINE WITHOUT CONTRAST",
+                                                                 "PR CT SCAN CERV SPINE CONTRAST","PR CT SCAN,CERVICAL SPINE,W/O CONTRAST","CT  CERVICAL SPINE WITH CONTRAST","PR DUPLEX EXTREM VENOUS,BILAT",
+                                                                 "VASC DX LOWER EXTREMITY VENOUS ULTRASOUND","STRESS NUCLEAR - UCH","DOBUTAMINE STRESS NUCLEAR SCAN PROTOCOL","XR LUMBAR SPINE 2 VIEWS (FLEX,EXT)",
+                                                                 "OS XR LUMBAR SPINE","OS XR LUMBAR SPINE COMPARE-NO READ","PR CHG X-RAY LUMBAR SPINE 2/3 VW","PR X-RAY LUMBAR SPINE 4 VW","XR LUMBAR SPINE (AP,LAT,FLEX,EXT,BENDING)",
+                                                                 "XR LUMBAR SPINE (AP,OBLS,LAT,SPOT,FLEX,EXT)","XR LUMBAR SPINE 1 VIEW (AP)","XR LUMBAR SPINE 1 VIEW (LAT)","XR LUMBAR SPINE 2 VIEWS (AP,LAT)","XR LUMBAR SPINE 2 VIEWS (FLEX,EXT)",
+                                                                 "XR LUMBAR SPINE 2 VIEWS (LAT BENDING ONLY)","XR LUMBAR SPINE 3 VIEWS (AP,LAT,SPOT)","XR LUMBAR SPINE 4 VIEW (AP,LAT,FLEX,EXT)","XR LUMBAR SPINE 5 VIEW (AP,LAT,OBLS,SPOT)",
+                                                                 "XR LUMBAR SPINE 6 VIEW (AP,LAT,OBLS,FLEX,EXT)","PR ASSAY OF SERUM POTASSIUM","CENTRAL LINE","CENTRAL LINE INSERTION","PR NONINVASV EXTREM EXAM,MULT,BILAT",
+                                                                 "PR SPCL STN 2 I&R EXCPT MICROORG/ENZYME/IMCYT&IMHIS","CLOS LARGE BOWEL BIOPSY","PR LORAZEPAM INJECTION 2 MG","UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION",
+                                                                 "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),] # problem
+#proc_cohort[proc_cohort$ProcedureName == "OS CT BODY COMPARE-NO READ",]
+nsqip_proc_merge <- full_join(proc_cohort,Epic_data,by = "arb_person_id")
+nsqip_proc_merge$ProcedureEventDate[nsqip_proc_merge$ProcedureEventDate==""] <- NA
+nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureEventDate)
+nsqip_proc_merge$SurgeryDate_asDate <- as.Date(nsqip_proc_merge$SurgeryDate_asDate)
 
-final_data <- rbind.fill(transpose_icd10,unique_comp_patients)
-final_data <- as.data.frame(final_data)
+nsqip_proc_merge$length_proc_operation <- nsqip_proc_merge$SurgeryDate_asDate-nsqip_proc_merge$as_date_proc
 
+#pre
+nsqip_proc_merge$pre_op_proc <- ifelse(nsqip_proc_merge$length_proc_operation > 0 & nsqip_proc_merge$length_proc_operation <= 365,1,0)
 
-######
-final_data$`OS CT BODY COMPARE-NO READ`[is.na(final_data$`OS CT BODY COMPARE-NO READ`)] <- 0 
+make_dummy <- nsqip_proc_merge[nsqip_proc_merge$pre_op_proc==1 & !is.na(nsqip_proc_merge$pre_op_proc),]
 
-final_data_store_proc_preop_0922 <- final_data
+transpose_icd10 <- make_dummy%>%
+  select(SurgeryID, ProcedureName)%>%
+  unique()%>%
+  mutate(yesno = 1)%>%
+  distinct%>%
+  filter(!(ProcedureName == ""))%>%
+  spread(ProcedureName, yesno, fill = 0)
 
-saveRDS(final_data_store_proc_preop_0922, paste0(fp_processed,
+store_patient_names_96 <- setdiff(unique(Epic_data$SurgeryID),unique(transpose_icd10$SurgeryID))
+
+final_data <- bind_rows(transpose_icd10,data.frame(SurgeryID = store_patient_names_96))
+
+final_data[is.na(final_data)] <- 0 
+
+saveRDS(final_data, paste0(fp_processed,
                                         "final_data_store_proc_preop_0922.rds"))
 
 # table(final_data_store_proc_preop_0922$`OS CT BODY COMPARE-NO READ`)
@@ -1096,18 +881,22 @@ rm(dummydf1_selectv2, dummydf1_select)
 ## TODO: pre_op_gender
 # patient <- read.csv(file = "data/C2730_Table1_Person_20240223.csv")
 
-patient_cohort <- patient[patient$arb_person_id %in% Epic_data$arb_person_id,c("arb_person_id","Sex"),]
-patient_cohort_uni <- patient_cohort[!duplicated(patient_cohort$arb_person_id),]
+mrn%<>%rename(patient_mrn = Mrn)
+patient %<>% left_join(mrn, by = "arb_person_id")
+patient$Epic_DOD <- ifelse(patient$Epic_DOD == "", NA, patient$Epic_DOD)
+patient$CDPHE_DOD <- ifelse(patient$CDPHE_DOD == "", NA, patient$CDPHE_DOD)
+patient$Date_of_Death <- coalesce(as.Date(patient$Epic_DOD, format = "%Y-%m-%d"), as.Date(patient$CDPHE_DOD, format = "%Y-%m-%d"))
+patient$Sex <- ifelse(patient$Sex %in% c("Unknown", "X"), NA, patient$Sex)
 
-df_merge_gender <- merge(Epic_data[,c("arb_person_id","SurgeryID")],patient_cohort_uni,by="arb_person_id",all.x = TRUE)
+patient_cohort <- patient[patient$arb_person_id %in% Epic_data$arb_person_id,c("arb_person_id","Sex", "Race", "Ethnicity", "Dob", "Date_of_Death","patient_mrn")]
+patient_cohort_uni <- patient_cohort[!duplicated(patient_cohort[ , c("arb_person_id", "patient_mrn")]),]
+
+df_merge_gender <- left_join(Epic_data[,c("arb_person_id","SurgeryID")],
+                             patient_cohort_uni,by=c("arb_person_id"))
 
 df_storee <- dummy_cols(df_merge_gender, select_columns ="Sex")
 
-#dummydf1 <- dummy_cols(make_dummy_keep_lbNames, select_columns = "LabPanelName")
-
-pre_op_gender <- df_storee
-
-saveRDS(pre_op_gender, paste0(fp_processed,
+saveRDS(df_storee, paste0(fp_processed,
                                           "pre_op_gender.rds"))
 #write.csv(df_storee,file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/preop_lab/pre_op_gender.csv")
 rm(patient, patient_cohort, patient_cohort_uni)
