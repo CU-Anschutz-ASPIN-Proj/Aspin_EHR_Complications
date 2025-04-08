@@ -5,10 +5,10 @@
 # \\data.ucdenver.pvt\dept\SOM\ACCORDS\Data\ACCORDSGPUHDCDATA
 
 # year, date and time related variables
-year_w <- 2025
+year_w <- 2024
  # date_str <- "20240911"
 # date_str <- "20241121"
-date_str <- "20250305"
+date_str <- "20250203"
 # date_str <- "20241219"
 # date_str <- "20241031"
 
