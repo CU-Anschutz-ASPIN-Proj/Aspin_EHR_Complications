@@ -7,9 +7,9 @@ Aspin_EHR_Complications/pipeline
 Data files: \\data\dept\SOM\ACCORDS\PiFolders\PI_Colborn\UCHealthSOR\ASPIN_Data
 
 ## TODO
-1. [x] Guannan Upload Aspin 2025 infectious Complication pipeline
-2. [] Guannan check RBC UNIT (postop), "ANTI-OBESITY - ANOREXIC AGENTS","ANTIHYPERTENSIVES, ACE INHIBITORS","FOLIC ACID PREPARATIONS","NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)" (preop)
-3. [x] Delete Lab positive part: Guannan check impact of Lab positive or not "lab_positive <- Lab
+1. - [x] Guannan Upload Aspin 2025 infectious Complication pipeline
+2. - [ ] Guannan check RBC UNIT (postop), "ANTI-OBESITY - ANOREXIC AGENTS","ANTIHYPERTENSIVES, ACE INHIBITORS","FOLIC ACID PREPARATIONS","NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)" (preop)
+3. - [x] Delete Lab positive part: Guannan check impact of Lab positive or not "lab_positive <- Lab
 lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
 lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
 
@@ -20,9 +20,9 @@ lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
 
 lab <- lab_positive2[,-ncol(lab_positive2)]"    
 
-4. [x] Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"  
-5. [] Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications,
-6. [] Guannan run this pipeline with 2024 HDC data, to compare infectious part with Aspin reports results (Guannan Previous), compare with the non infectious part (Yi previous results) 
+4. - [x] Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"  
+5. - [ ] Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications,
+6. - [ ] Guannan run this pipeline with 2024 HDC data, to compare infectious part with Aspin reports results (Guannan Previous), compare with the non infectious part (Yi previous results) 
 
 ## Naming Convention 
 
