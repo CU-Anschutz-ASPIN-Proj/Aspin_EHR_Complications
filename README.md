@@ -21,7 +21,7 @@ lab <- lab_positive2[,-ncol(lab_positive2)]"
 3. Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"  
 4. Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications, 
 
-## Naming Convetion 
+## Naming Convention 
 
 Different Folder name based on the date of data, but same names for processed data files. 
 
