@@ -6,7 +6,8 @@
 
 ## TODO
 1. Guannan Upload Aspin 2025 infectious Complication pipeline
-2. Guannan check RBC UNIT and impact of Lab positive or not "lab_positive <- Lab
+2. Guannan check RBC UNIT (postop), "ANTI-OBESITY - ANOREXIC AGENTS","ANTIHYPERTENSIVES, ACE INHIBITORS","FOLIC ACID PREPARATIONS","NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)" (preop)
+3. Guannan check impact of Lab positive or not "lab_positive <- Lab
 lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
 lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
 
