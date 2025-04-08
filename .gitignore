@@ -4,6 +4,7 @@
 .Rproj
 .Rapp.history
 .Rproj.user/
+*.Rproj
 
 # - R serialized objects (sensitive, do not share publicly) -
 *.rds
