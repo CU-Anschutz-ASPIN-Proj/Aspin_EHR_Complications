@@ -1,0 +1,20 @@
+# - R session files -
+.Rhistory
+.RData
+.Rproj
+.Rapp.history
+.Rproj.user/
+
+# - R serialized objects (sensitive, do not share publicly) -
+*.rds
+*.rdata
+
+# - Data files (sensitive, do not share publicly) -
+*.txt
+*.csv
+*.xls
+*.xlsx
+
+# - Reports (sensitive, do not share publicly) - 
+*.doc
+*.docx
