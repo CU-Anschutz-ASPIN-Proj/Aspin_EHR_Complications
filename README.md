@@ -25,7 +25,8 @@ lab <- lab_positive2[,-ncol(lab_positive2)]"
 6. - [ ] Guannan run this pipeline with 2024 HDC data, to compare infectious part with Aspin reports results (Guannan Previous), compare with the non infectious part (Yi previous results). Compare predictive probabilities.    
 7. - [ ] Table 1, patients characteristics, Age Mean(SD); Sex Female, male; Race; Ethnicity  
 8. - [ ] Table 2,  incidence rate and O/E
-9. - [ ] Two Figures, one combined incidence rate, one O/E, reuse code 
+9. - [ ] Two Figures, one combined incidence rate, one O/E, reuse code
+10. - [ ] Optimize lists to filter LabPanelName, ProcedureName, PharmaceuticalClass, as for now, add unique() and try to add as many as possible.
 
 ## Naming Convention 
 
