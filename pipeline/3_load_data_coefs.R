@@ -58,7 +58,7 @@ patient <- fread(paste0("../data/", date_str, "/", fp_prefix,
                            "Table1_Person_", date_str, ".csv"))%>%as.data.frame()
 # need to check if this is in accordance with your folder
 mrn <- fread(paste0("../data/", date_str, "/", fp_prefix, 
-                    "MRN", date_str, ".csv"))%>%as.data.frame()
+                    "MRN_", date_str, ".csv"))%>%as.data.frame()
 
 # # preop rate
 # SSI_coef_preop <- as.data.frame(read.csv(file = "../data/model/SSI_coef_20220906.csv",check.names=FALSE))
