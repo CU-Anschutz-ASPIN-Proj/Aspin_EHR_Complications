@@ -366,10 +366,11 @@ lab_cohort <- lab_cohort_r[(lab_cohort_r$LabPanelName %in% c("(GEM) BLOOD GASES 
                                                              "BLOOD CULTURE, FUNGAL (MOLD ONLY)", "BLOOD CULTURE, ISOLATOR BACTERIA", "BLOOD CULTURE, ISOLATOR FUNGUS",
                                                              "FUNGUS CULTURE - BLOOD", "LAB USE ONLY - MRSA/SA BLOOD CULTURE PCR",
                                                              "URINE CULTURE,COMPREHENSIVE", "URINE CULTURE,PRENATAL, W/GBS",
+                                                             "PREPARE PLATELETS FOR TRANSFUSION", 
                                                              "LAB USE ONLY - URINE CULTURE, ROUTINE", "LAB USE ONLY - URINE CULTURE RT 997870", 
                                                              "LAB USE ONLY - URINE CULTURE, PRENATAL, W/GBS RESULT")) | 
                              (lab_cohort_r$LabPanelName %in% as.factor(cultures$LabPanelName))|
-                             (lab_cohort$LabPanelName %in% CDIFFs),]
+                             (lab_cohort_r$LabPanelName %in% CDIFFs),]
 
 
 

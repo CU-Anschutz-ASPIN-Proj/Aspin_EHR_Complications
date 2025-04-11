@@ -86,6 +86,9 @@ gender_preop <- pre_op_gender
 
 analytical_preop <- inner_join(surg_pred_preop,diag_pred_preop,by="SurgeryID")
 
+# TODO: FIX: add the following line to use predictor 
+analytical_preop <- inner_join(analytical_preop, medi_pred_preop, by="SurgeryID")
+
 analytical_preopdf2 <- inner_join(analytical_preop,lab_pred_preop,by="SurgeryID")
 
 analytical_preopdf4 <- inner_join(analytical_preopdf2,proc_pred_preop,by="SurgeryID")
@@ -360,7 +363,7 @@ analytical_postopv2$Blood.products <- ifelse(analytical_postopv2$`VTE PLATELET M
                                                analytical_postopv2$`AHG CROSSMATCH` == 1|
                                                analytical_postopv2$`ANTIBODY PATIENT INTERPS 1-5` == 1|
                                                analytical_postopv2$`PLATELETS UNIT` == 1|
-                                               coalesce(analytical_postopv2$`PREPARE PLATELETS FOR TRANSFUSION`,0) == 1 , 1, 0)
+                                               analytical_postopv2$`PREPARE PLATELETS FOR TRANSFUSION` == 1, 1, 0)
 analytical_postopv2$echo <- ifelse(analytical_postopv2$`CARD DX ECHO COMPLETE TTE TRANSTHORACIC STANDARD` == 1|
                                      analytical_postopv2$`CARD DX ECHO LIMITED TTE 2D TRANSTHORACIC FOLLOW UP FOCUSED EXAM` == 1|
                                      analytical_postopv2$`CARD DX ECHO TRANSESOPHAGEAL TEE` == 1|
@@ -446,7 +449,7 @@ analytical_postopv2$Anticoagulants <- ifelse(analytical_postopv2$`PR INJ ENOXAPA
 analytical_postopv2$bloodtrans <- ifelse(analytical_postopv2$`PACKED CELL TRANSFUSION` == 1|
                                            analytical_postopv2$`TRANSFUSE RED BLOOD CELLS` == 1|
                                            analytical_postopv2$`Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach` == 1|
-                                           coalesce(analytical_postopv2$`RBC UNIT`,0) == 1, 1, 0)# can't find
+                                           coalesce(analytical_postopv2$`RBC UNIT`,0) == 1, 1, 0)# can't find RBC UNIT in 2024 data
 analytical_postopv2$antibiotics <- ifelse(analytical_postopv2$`ABSORBABLE SULFONAMIDE ANTIBACTERIAL AGENTS` == 1|
                                             analytical_postopv2$`NITROFURAN DERIVATIVES ANTIBACTERIAL AGENTS` == 1|
                                             analytical_postopv2$`PENICILLIN ANTIBIOTICS` == 1|

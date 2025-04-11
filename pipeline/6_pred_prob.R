@@ -158,7 +158,7 @@ analytical_preopv2$pred_prob_cardiac_preop <- 1/(1+exp(-(cardiac_coef_preop$x[1]
                                                      analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*cardiac_coef_preop$x[4]+
                                                      analytical_preopv2$`PR NONINVASV EXTREM EXAM,MULT,BILAT`*cardiac_coef_preop$x[5]+
                                                      analytical_preopv2$STRESS.NUCLEAR*cardiac_coef_preop$x[6]+
-                                                     coalesce(analytical_preopv2$`ANTI-OBESITY - ANOREXIC AGENTS`)*cardiac_coef_preop$x[7]+# couldn't find this
+                                                     analytical_preopv2$`ANTI-OBESITY - ANOREXIC AGENTS`*cardiac_coef_preop$x[7]+
                                                      analytical_preopv2$`ANTIBODY PATIENT INTERPS 1-5`*cardiac_coef_preop$x[8]+
                                                      analytical_preopv2$POTASSIUM*cardiac_coef_preop$x[9]+
                                                      analytical_preopv2$`276.12`*cardiac_coef_preop$x[10]+
@@ -241,9 +241,9 @@ analytical_preopv2$pred_prob_upradmin_preop <- 1/(1+exp(-(upradmin_coef_preop$x[
                                                       analytical_preopv2$CT.BODY.CHEST.PELV.W.ABD*upradmin_coef_preop$x[9]+
                                                       analytical_preopv2$`PR LORAZEPAM INJECTION 2 MG`*upradmin_coef_preop$x[10]+
                                                       analytical_preopv2$`UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION`*upradmin_coef_preop$x[11]+
-                                                      coalesce(analytical_preopv2$`ANTIHYPERTENSIVES, ACE INHIBITORS`,0)*upradmin_coef_preop$x[12]+# couldn't find this
-                                                      coalesce(analytical_preopv2$`FOLIC ACID PREPARATIONS`,0)*upradmin_coef_preop$x[13]+# couldn't find this
-                                                      coalesce(analytical_preopv2$`NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)`,0)*upradmin_coef_preop$x[14]+# couldn't find this
+                                                      analytical_preopv2$`ANTIHYPERTENSIVES, ACE INHIBITORS`*upradmin_coef_preop$x[12]+# couldn't find this
+                                                      analytical_preopv2$`FOLIC ACID PREPARATIONS`*upradmin_coef_preop$x[13]+# couldn't find this
+                                                      analytical_preopv2$`NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)`*upradmin_coef_preop$x[14]+# couldn't find this
                                                       analytical_preopv2$`345.1`*upradmin_coef_preop$x[15]+
                                                       analytical_preopv2$`386.9`*upradmin_coef_preop$x[16]+
                                                       analytical_preopv2$`577.2`*upradmin_coef_preop$x[17]+
