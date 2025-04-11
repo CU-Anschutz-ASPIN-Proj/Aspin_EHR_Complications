@@ -8,7 +8,7 @@ Data files: \\data\dept\SOM\ACCORDS\PiFolders\PI_Colborn\UCHealthSOR\ASPIN_Data
 
 ## TODO
 1. - [x] Guannan Upload Aspin 2025 infectious Complication pipeline
-2. - [ ] Guannan check RBC UNIT (postop), "ANTI-OBESITY - ANOREXIC AGENTS","ANTIHYPERTENSIVES, ACE INHIBITORS","FOLIC ACID PREPARATIONS","NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)" (preop)
+2. - [x] Guannan check RBC UNIT (postop), "ANTI-OBESITY - ANOREXIC AGENTS","ANTIHYPERTENSIVES, ACE INHIBITORS","FOLIC ACID PREPARATIONS","NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)" (preop)
 3. - [x] Delete Lab positive part: Guannan check impact of Lab positive or not "lab_positive <- Lab
 lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
 lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
