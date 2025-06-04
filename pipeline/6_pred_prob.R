@@ -1,4 +1,3 @@
-# TODO: load model 
 # Define variables to preserve
 vars_to_keep <- c("pipeline_dir", "source_if_exists")
 
@@ -20,15 +19,15 @@ load("../data/model/glmUTI.rdata")
 load("../data/model/glmSYSEP.rdata")
 load("../data/model/glmPNEU.rdata")
 
-cardiac_coef_preop <- as.data.frame(fread(file = "model/preop/cardiac_pre.csv",check.names=FALSE))
-morb_coef_preop <- as.data.frame(fread(file = "model/preop/morb_pre.csv",check.names=FALSE))
-nothome_coef_preop <- as.data.frame(fread(file = "model/preop/nothome_pre.csv",check.names=FALSE))
-pulmonary_coef_preop <- as.data.frame(fread(file = "model/preop/pulmonary_pre.csv",check.names=FALSE))
-renal_coef_preop <- as.data.frame(fread(file = "model/preop/renal_pre.csv",check.names=FALSE))
-upradmin_coef_preop <- as.data.frame(fread(file = "model/preop/unplan_pre.csv",check.names=FALSE))
-VTE_coef_preop <- as.data.frame(fread(file = "model/preop/VTE_pre.csv",check.names=FALSE))
-mort_coef_preop <- as.data.frame(fread(file = "model/preop/mort_pre.csv",check.names=FALSE))
-bleed_coef_preop <- as.data.frame(fread(file = "model/preop/bleed_pre.csv",check.names=FALSE))
+cardiac_coef_preop <- as.data.frame(fread(file = "../data/model/preop/cardiac_pre.csv",check.names=FALSE))
+morb_coef_preop <- as.data.frame(fread(file = "../data/model/preop/morb_pre.csv",check.names=FALSE))
+nothome_coef_preop <- as.data.frame(fread(file = "../data/model/preop/nothome_pre.csv",check.names=FALSE))
+pulmonary_coef_preop <- as.data.frame(fread(file = "../data/model/preop/pulmonary_pre.csv",check.names=FALSE))
+renal_coef_preop <- as.data.frame(fread(file = "../data/model/preop/renal_pre.csv",check.names=FALSE))
+upradmin_coef_preop <- as.data.frame(fread(file = "../data/model/preop/unplan_pre.csv",check.names=FALSE))
+VTE_coef_preop <- as.data.frame(fread(file = "../data/model/preop/VTE_pre.csv",check.names=FALSE))
+mort_coef_preop <- as.data.frame(fread(file = "../data/model/preop/mort_pre.csv",check.names=FALSE))
+bleed_coef_preop <- as.data.frame(fread(file = "../data/model/preop/bleed_pre.csv",check.names=FALSE))
 
 # postop rate
 SSI_coef_postop <- as.data.frame(read.csv(file = "../data/model/SSI_coefficients_1220.csv",check.names=FALSE))
@@ -36,14 +35,14 @@ UTI_coef_postop <- as.data.frame(read.csv(file = "../data/model/UTI_coefficients
 SYSEP_coef_postop <- as.data.frame(read.csv(file = "../data/model/SYSEP_coefficients_0127.csv",check.names=FALSE))
 PNEU_coef_postop <- as.data.frame(read.csv(file = "../data/model/PNEU_coefficients_1220.csv",check.names=FALSE))
 
-cardiac_coef_postop <- as.data.frame(fread(file = "model/postop/cardiac_post.csv",check.names=FALSE))
-morb_coef_postop <- as.data.frame(fread(file = "model/postop/morb_post.csv",check.names=FALSE))
-nothome_coef_postop <- as.data.frame(fread(file = "model/postop/nothome_post.csv",check.names=FALSE))
-pulmonary_coef_postop <- as.data.frame(fread(file = "model/postop/pulmonary_post.csv",check.names=FALSE))
-renal_coef_postop <- as.data.frame(fread(file = "model/postop/renal_post.csv",check.names=FALSE))
-upradmin_coef_postop <- as.data.frame(fread(file = "model/postop/upradmin_post.csv",check.names=FALSE))
-VTE_coef_postop <- as.data.frame(fread(file = "model/postop/VTE_post.csv",check.names=FALSE))
-bleed_coef_postop <- as.data.frame(fread(file = "model/postop/bleed_post.csv",check.names=FALSE))
+cardiac_coef_postop <- as.data.frame(fread(file = "../data/model/postop/cardiac_post.csv",check.names=FALSE))
+morb_coef_postop <- as.data.frame(fread(file = "../data/model/postop/morb_post.csv",check.names=FALSE))
+nothome_coef_postop <- as.data.frame(fread(file = "../data/model/postop/nothome_post.csv",check.names=FALSE))
+pulmonary_coef_postop <- as.data.frame(fread(file = "../data/model/postop/pulmonary_post.csv",check.names=FALSE))
+renal_coef_postop <- as.data.frame(fread(file = "../data/model/postop/renal_post.csv",check.names=FALSE))
+upradmin_coef_postop <- as.data.frame(fread(file = "../data/model/postop/upradmin_post.csv",check.names=FALSE))
+VTE_coef_postop <- as.data.frame(fread(file = "../data/model/postop/VTE_post.csv",check.names=FALSE))
+bleed_coef_postop <- as.data.frame(fread(file = "../data/model/postop/bleed_post.csv",check.names=FALSE))
 
 # TODO: load datasets for predicted prob
 
@@ -71,7 +70,7 @@ analytical_preopv2$pred_prob_SSI_preop <- 1/(1+exp(-(SSI_coef_preop$Estimate[1]+
                                                        analytical_preopv2$`WoundClass_Dirty or Infected `*SSI_coef_preop$Estimate[4]+
                                                        analytical_preopv2$`PrimarySurgeonSpecialty_Orthopedic Surgery`*SSI_coef_preop$Estimate[5]+
                                                        analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*SSI_coef_preop$Estimate[6]+ 
-                                                       analytical_preopv2$`OS CT BODY COMPARE-NO READ`*SSI_coef_preop$Estimate[7]+
+                                                       coalesce(analytical_preopv2$`OS CT BODY COMPARE-NO READ`,0)*SSI_coef_preop$Estimate[7]+
                                                        analytical_preopv2$`80`*SSI_coef_preop$Estimate[8]+
                                                        analytical_preopv2$comb_560*SSI_coef_preop$Estimate[9]+
                                                        analytical_preopv2$blood_cult_comb*SSI_coef_preop$Estimate[10]
@@ -96,7 +95,7 @@ analytical_preopv2$pred_prob_UTI_preop <- 1/(1+exp(-(UTI_coef_preop$Estimate[1]+
                                                        analytical_preopv2$PrimarySurgeonSpecialty_Gynecology*UTI_coef_preop$Estimate[3]+
                                                        analytical_preopv2$PrimarySurgeonSpecialty_Urology*UTI_coef_preop$Estimate[4]+
                                                        analytical_preopv2$SurgeryInpatientOrOutpatient_Inpatient*UTI_coef_preop$Estimate[5]+
-                                                       analytical_preopv2$`OS CT BODY COMPARE-NO READ`*UTI_coef_preop$Estimate[6]+
+                                                       coalesce(analytical_preopv2$`OS CT BODY COMPARE-NO READ`,0)*UTI_coef_preop$Estimate[6]+
                                                        analytical_preopv2$`591`*UTI_coef_preop$Estimate[7])))
 
 ################################################
@@ -159,7 +158,7 @@ analytical_preopv2$pred_prob_cardiac_preop <- 1/(1+exp(-(cardiac_coef_preop$x[1]
                                                      analytical_preopv2$`PR NONINVASV EXTREM EXAM,MULT,BILAT`*cardiac_coef_preop$x[5]+
                                                      analytical_preopv2$STRESS.NUCLEAR*cardiac_coef_preop$x[6]+
                                                      analytical_preopv2$`ANTI-OBESITY - ANOREXIC AGENTS`*cardiac_coef_preop$x[7]+
-                                                     analytical_preopv2$`ANTIBODY PATIENT INTERPS 1-5`*cardiac_coef_preop$x[8]+
+                                                    coalesce(analytical_preopv2$`ANTIBODY PATIENT INTERPS 1-5`, 0)*cardiac_coef_preop$x[8]+
                                                      analytical_preopv2$POTASSIUM*cardiac_coef_preop$x[9]+
                                                      analytical_preopv2$`276.12`*cardiac_coef_preop$x[10]+
                                                      analytical_preopv2$`394.7`*cardiac_coef_preop$x[11]+
@@ -237,10 +236,10 @@ analytical_preopv2$pred_prob_upradmin_preop <- 1/(1+exp(-(upradmin_coef_preop$x[
                                                       analytical_preopv2$ASA_class_epic_trans_3*upradmin_coef_preop$x[5]+
                                                       analytical_preopv2$ASA_class_epic_trans_4or5*upradmin_coef_preop$x[6]+
                                                       analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*upradmin_coef_preop$x[7]+
-                                                      analytical_preopv2$`CLOS LARGE BOWEL BIOPSY`*upradmin_coef_preop$x[8]+
+                                                        coalesce(analytical_preopv2$`CLOS LARGE BOWEL BIOPSY`, 0)*upradmin_coef_preop$x[8]+
                                                       analytical_preopv2$CT.BODY.CHEST.PELV.W.ABD*upradmin_coef_preop$x[9]+
                                                       analytical_preopv2$`PR LORAZEPAM INJECTION 2 MG`*upradmin_coef_preop$x[10]+
-                                                      analytical_preopv2$`UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION`*upradmin_coef_preop$x[11]+
+                                                        coalesce(analytical_preopv2$`UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION`, 0)*upradmin_coef_preop$x[11]+
                                                       analytical_preopv2$`ANTIHYPERTENSIVES, ACE INHIBITORS`*upradmin_coef_preop$x[12]+# couldn't find this
                                                       analytical_preopv2$`FOLIC ACID PREPARATIONS`*upradmin_coef_preop$x[13]+# couldn't find this
                                                       analytical_preopv2$`NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)`*upradmin_coef_preop$x[14]+# couldn't find this
@@ -280,7 +279,7 @@ analytical_preopv2$pred_prob_bleed_preop <- 1/(1+exp(-(bleed_coef_preop$x[1]+
                                                    analytical_preopv2$ASA_class_epic_trans_3*bleed_coef_preop$x[6]+
                                                    analytical_preopv2$ASA_class_epic_trans_4or5*bleed_coef_preop$x[7]+
                                                    analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*bleed_coef_preop$x[8]+
-                                                   analytical_preopv2$`OS CT BODY COMPARE-NO READ`*bleed_coef_preop$x[9]+
+                                                  coalesce(analytical_preopv2$`OS CT BODY COMPARE-NO READ`,0)*bleed_coef_preop$x[9]+
                                                    analytical_preopv2$anemia*bleed_coef_preop$x[10]+
                                                    analytical_preopv2$`737`*bleed_coef_preop$x[11]
 )))
@@ -355,17 +354,17 @@ analytical_postopv2$pred_prob_cardiac <- 1/(1+exp(-(cardiac_coef_postop$x[1]+
                                                       analytical_postopv2$arrythmias*cardiac_coef_postop$x[5]+
                                                       analytical_postopv2$`429`*cardiac_coef_postop$x[6]+
                                                       analytical_postopv2$sepshock*cardiac_coef_postop$x[7]+
-                                                      analytical_postopv2$`CPAP OVERNIGHT`*cardiac_coef_postop$x[8]+
+                                                      coalesce(analytical_postopv2$`CPAP OVERNIGHT`, 0)*cardiac_coef_postop$x[8]+
                                                       analytical_postopv2$`echo`*cardiac_coef_postop$x[9]+
-                                                      analytical_postopv2$`INSERT ARTERIAL LINE`*cardiac_coef_postop$x[10]+
+                                                      coalesce(analytical_postopv2$`INSERT ARTERIAL LINE`,0)*cardiac_coef_postop$x[10]+
                                                       analytical_postopv2$Blood.products*cardiac_coef_postop$x[11]+
-                                                      analytical_postopv2$`XR CHEST 2 VIEW (PA,LAT)`*cardiac_coef_postop$x[12]+
+                                                      coalesce(analytical_postopv2$`XR CHEST 2 VIEW (PA,LAT)`,0)*cardiac_coef_postop$x[12]+
                                                       analytical_postopv2$`ADRENERGIC AGENTS,CATECHOLAMINES`*cardiac_coef_postop$x[13]+
                                                       analytical_postopv2$`ANTIDIURETIC AND VASOPRESSOR HORMONES`*cardiac_coef_postop$x[14]+
                                                       analytical_postopv2$`BETA-ADRENERGIC AGENTS`*cardiac_coef_postop$x[15]+
                                                       analytical_postopv2$`BICARBONATE PRODUCING/CONTAINING AGENTS`*cardiac_coef_postop$x[16]+
                                                       analytical_postopv2$`CKMB PANEL`*cardiac_coef_postop$x[17]+
-                                                      analytical_postopv2$`POINT OF CARE TESTS`*cardiac_coef_postop$x[18]+
+                                                      coalesce(analytical_postopv2$`POINT OF CARE TESTS`,0)*cardiac_coef_postop$x[18]+
                                                       analytical_postopv2$troponin*cardiac_coef_postop$x[19])))
 
 analytical_postopv2$pred_prob_morb <- 1/(1+exp(-(morb_coef_postop$x[1]+
@@ -373,8 +372,8 @@ analytical_postopv2$pred_prob_morb <- 1/(1+exp(-(morb_coef_postop$x[1]+
                                                    analytical_postopv2$VT*morb_coef_postop$x[3]+
                                                    analytical_postopv2$`591`*morb_coef_postop$x[4]+
                                                    analytical_postopv2$`599.3`*morb_coef_postop$x[5]+
-                                                   analytical_postopv2$`INCISION AND DRAINAGE HEAD/NECK`*morb_coef_postop$x[6]+
-                                                   analytical_postopv2$`LAST TYPE & SCREEN (CLOT) STATUS`*morb_coef_postop$x[7]+
+                                                   coalesce(analytical_postopv2$`INCISION AND DRAINAGE HEAD/NECK`,0)*morb_coef_postop$x[6]+
+                                                   coalesce(analytical_postopv2$`LAST TYPE & SCREEN (CLOT) STATUS`,0)*morb_coef_postop$x[7]+
                                                    analytical_postopv2$bloodtrans*morb_coef_postop$x[8]+
                                                    analytical_postopv2$`PR BACTERIA IDENTIFICATION, AEROBIC ISOLATE`*morb_coef_postop$x[9]+
                                                    analytical_postopv2$antibiotics*morb_coef_postop$x[10]+
@@ -383,28 +382,31 @@ analytical_postopv2$pred_prob_morb <- 1/(1+exp(-(morb_coef_postop$x[1]+
                                                    analytical_postopv2$`ARTERIAL BLOOD GAS`*morb_coef_postop$x[13]+
                                                    analytical_postopv2$`BASIC METABOLIC PANEL`*morb_coef_postop$x[14]+
                                                    analytical_postopv2$`CBC NO AUTO DIFF`*morb_coef_postop$x[15]+
-                                                   analytical_postopv2$`POCT CRITICAL PANEL`*morb_coef_postop$x[16]+
+                                                   coalesce(analytical_postopv2$`POCT CRITICAL PANEL`, 0)*morb_coef_postop$x[16]+
+                                                   # change 
                                                    analytical_postopv2$`URINE CULTURE`*morb_coef_postop$x[17])))
+                                                   # analytical_postopv2$Urine_cult_comb*morb_coef_postop$x[17])))
 
 analytical_postopv2$pred_prob_nothome <- 1/(1+exp(-(nothome_coef_postop$x[1]+
                                                       analytical_postopv2$`285`*nothome_coef_postop$x[2]+
                                                       analytical_postopv2$Orthopedic.problems*nothome_coef_postop$x[3]+
-                                                      analytical_postopv2$`ADMIT PATIENT`*nothome_coef_postop$x[4]+
-                                                      analytical_postopv2$`FEMORAL NERVE BLOCK`*nothome_coef_postop$x[5]+
+                                                      coalesce(analytical_postopv2$`ADMIT PATIENT`,0)*nothome_coef_postop$x[4]+
+                                                      coalesce(analytical_postopv2$`FEMORAL NERVE BLOCK`,0)*nothome_coef_postop$x[5]+
                                                       analytical_postopv2$Social.planning*nothome_coef_postop$x[6]+
                                                       analytical_postopv2$Discharge.planning*nothome_coef_postop$x[7]+
                                                       analytical_postopv2$`PR INJ, PROPOFOL, 10 MG`*nothome_coef_postop$x[8]+
-                                                      analytical_postopv2$`RETURN PATIENT`*nothome_coef_postop$x[9]+
+                                                      coalesce(analytical_postopv2$`RETURN PATIENT`, 0)*nothome_coef_postop$x[9]+
                                                       analytical_postopv2$`GENERAL ANESTHETICS,INJECTABLE-BENZODIAZEPINE TYPE`*nothome_coef_postop$x[10]+
                                                       analytical_postopv2$`GLUCOCORTICOIDS`*nothome_coef_postop$x[11]+
                                                       analytical_postopv2$`LAXATIVES, LOCAL/RECTAL`*nothome_coef_postop$x[12]+
                                                       analytical_postopv2$`LOOP DIURETICS`*nothome_coef_postop$x[13]+
-                                                      analytical_postopv2$`NSAIDS, CYCLOOXYGENASE INHIBITOR - TYPE ANALGESICS`*nothome_coef_postop$x[14]+
+                                                      coalesce(analytical_postopv2$`NSAIDS, CYCLOOXYGENASE INHIBITOR - TYPE ANALGESICS`,0)*nothome_coef_postop$x[14]+
                                                       analytical_postopv2$`TOPICAL ANTIFUNGALS`*nothome_coef_postop$x[15]+
                                                       analytical_postopv2$`BASIC METABOLIC PANEL`*nothome_coef_postop$x[16]+
+                                                      # 
                                                       analytical_postopv2$`CBC NO AUTO DIFF`*nothome_coef_postop$x[17]+
                                                       analytical_postopv2$`HEMATOCRIT`*nothome_coef_postop$x[18]+
-                                                      analytical_postopv2$`POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE`*nothome_coef_postop$x[19])))#
+                                                      coalesce(analytical_postopv2$`POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE`,0)*nothome_coef_postop$x[19])))#
 
 analytical_postopv2$pred_prob_pulmonary <- 1/(1+exp(-(pulmonary_coef_postop$x[1]+
                                                         analytical_postopv2$`38`*pulmonary_coef_postop$x[2]+
@@ -412,13 +414,13 @@ analytical_postopv2$pred_prob_pulmonary <- 1/(1+exp(-(pulmonary_coef_postop$x[1]
                                                         analytical_postopv2$`501`*pulmonary_coef_postop$x[4]+
                                                         analytical_postopv2$XRAY*pulmonary_coef_postop$x[5]+
                                                         analytical_postopv2$intubation*pulmonary_coef_postop$x[6]+
-                                                        analytical_postopv2$`RESTRAINTS NON-BEHAVIORAL`*pulmonary_coef_postop$x[7]+
-                                                        analytical_postopv2$`TRANSFER PATIENT`*pulmonary_coef_postop$x[8]+
+                                                        coalesce(analytical_postopv2$`RESTRAINTS NON-BEHAVIORAL`, 0)*pulmonary_coef_postop$x[7]+
+                                                        coalesce(analytical_postopv2$`TRANSFER PATIENT`,0)*pulmonary_coef_postop$x[8]+
                                                         analytical_postopv2$`ANTIEMETIC/ANTIVERTIGO AGENTS`*pulmonary_coef_postop$x[9]+
                                                         analytical_postopv2$`EXPECTORANTS`*pulmonary_coef_postop$x[10]+
                                                         analytical_postopv2$BLOOD.GAS*pulmonary_coef_postop$x[11]+
                                                         analytical_postopv2$`CONGESTIVE HEART FAILURE BNP`*pulmonary_coef_postop$x[12]+
-                                                        analytical_postopv2$`D DIMER QUANTITATIVE`*pulmonary_coef_postop$x[13]+
+                                                        coalesce(analytical_postopv2$`D DIMER QUANTITATIVE`,0)*pulmonary_coef_postop$x[13]+
                                                         analytical_postopv2$POINT.OF.CARE*pulmonary_coef_postop$x[14]+
                                                         analytical_postopv2$`RESPIRATORY CULTURE`*pulmonary_coef_postop$x[15]+
                                                         analytical_postopv2$`VANCOMYCIN TROUGH`*pulmonary_coef_postop$x[16])))
@@ -429,11 +431,11 @@ analytical_postopv2$pred_prob_renal <- 1/(1+exp(-(renal_coef_postop$x[1]+
                                                     analytical_postopv2$`559`*renal_coef_postop$x[4]+
                                                     analytical_postopv2$`585.1`*renal_coef_postop$x[5]+
                                                     analytical_postopv2$dialysis*renal_coef_postop$x[6]+
-                                                    analytical_postopv2$`IP CONSULT TO PHARMACY - TPN`*renal_coef_postop$x[7]+
-                                                    analytical_postopv2$`IP CONSULT TO WOUND / OSTOMY / SKIN TEAM`*renal_coef_postop$x[8]+
-                                                    analytical_postopv2$`US RENAL (KIDNEYS/BLADDER ONLY)`*renal_coef_postop$x[9]+
-                                                    analytical_postopv2$`US UPPER EXTREMITY VENOUS BIL`*renal_coef_postop$x[10]+
-                                                    analytical_postopv2$`WEIGH PATIENT`*renal_coef_postop$x[11]+
+                                                    coalesce(analytical_postopv2$`IP CONSULT TO PHARMACY - TPN`,0)*renal_coef_postop$x[7]+
+                                                    coalesce(analytical_postopv2$`IP CONSULT TO WOUND / OSTOMY / SKIN TEAM`,0)*renal_coef_postop$x[8]+
+                                                    coalesce(analytical_postopv2$`US RENAL (KIDNEYS/BLADDER ONLY)`, 0)*renal_coef_postop$x[9]+
+                                                    coalesce(analytical_postopv2$`US UPPER EXTREMITY VENOUS BIL`,0)*renal_coef_postop$x[10]+
+                                                    coalesce(analytical_postopv2$`WEIGH PATIENT`,0)*renal_coef_postop$x[11]+
                                                     analytical_postopv2$IRON.REPLACE*renal_coef_postop$x[12]+
                                                     analytical_postopv2$`ACUTE HEPATITIS PANEL`*renal_coef_postop$x[13]+
                                                     analytical_postopv2$URINE*renal_coef_postop$x[14]+
@@ -446,26 +448,26 @@ analytical_postopv2$pred_prob_upradmin <- 1/(1+exp(-(upradmin_coef_postop$x[1]+
                                                        analytical_postopv2$`80`*upradmin_coef_postop$x[2]+
                                                        analytical_postopv2$`850`*upradmin_coef_postop$x[3]+
                                                        analytical_postopv2$`851`*upradmin_coef_postop$x[4]+
-                                                       analytical_postopv2$`ADMIT PATIENT`*upradmin_coef_postop$x[5]+
-                                                       analytical_postopv2$`PREADMISSION ADMIT ORDER - RN TO RELEASE`*upradmin_coef_postop$x[6]+
-                                                       analytical_postopv2$`UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION`*upradmin_coef_postop$x[7])))
+                                                       coalesce(analytical_postopv2$`ADMIT PATIENT`, 0)*upradmin_coef_postop$x[5]+
+                                                        coalesce(analytical_postopv2$`PREADMISSION ADMIT ORDER - RN TO RELEASE`, 0)*upradmin_coef_postop$x[6]+
+                                                       coalesce(analytical_postopv2$`UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION`, 0)*upradmin_coef_postop$x[7])))
 
 analytical_postopv2$pred_prob_VTE <- 1/(1+exp(-(VTE_coef_postop$x[1]+
                                                   analytical_postopv2$VT*VTE_coef_postop$x[2]+
-                                                  analytical_postopv2$`.XR CHEST SINGLE (PA)`*VTE_coef_postop$x[3]+
-                                                  analytical_postopv2$`CTA CHEST FOR PE`*VTE_coef_postop$x[4]+
-                                                  analytical_postopv2$`OPN RT HEMICOLECTOMY NEC`*VTE_coef_postop$x[5]+
+                                                  coalesce(analytical_postopv2$`.XR CHEST SINGLE (PA)`, 0)*VTE_coef_postop$x[3]+
+                                                  coalesce(analytical_postopv2$`CTA CHEST FOR PE`, 0)*VTE_coef_postop$x[4]+
+                                                  coalesce(analytical_postopv2$`OPN RT HEMICOLECTOMY NEC`, 0)*VTE_coef_postop$x[5]+
                                                   analytical_postopv2$Anticoagulants*VTE_coef_postop$x[6]+
-                                                  analytical_postopv2$`US UPPER EXTREMITY VENOUS UNILATERAL`*VTE_coef_postop$x[7]+
+                                                  coalesce(analytical_postopv2$`US UPPER EXTREMITY VENOUS UNILATERAL`, 0)*VTE_coef_postop$x[7]+
                                                   analytical_postopv2$`FOLIC ACID PREPARATIONS`*VTE_coef_postop$x[8])))
 
 analytical_postopv2$pred_prob_bleed <- 1/(1+exp(-(bleed_coef_postop$x[1]+
                                                     analytical_postopv2$`285`*bleed_coef_postop$x[2]+
                                                     analytical_postopv2$`CALCIUM REPLACEMENT`*bleed_coef_postop$x[3]+
                                                     analytical_postopv2$`CBC NO AUTO DIFF`*bleed_coef_postop$x[4]+
-                                                    analytical_postopv2$`LAST TYPE & SCREEN (CLOT) STATUS`*bleed_coef_postop$x[5]+
+                                                    coalesce(analytical_postopv2$`LAST TYPE & SCREEN (CLOT) STATUS`, 0)*bleed_coef_postop$x[5]+
                                                     analytical_postopv2$`PLASMA EXPANDERS`*bleed_coef_postop$x[6]+
-                                                    analytical_postopv2$`POCT CRITICAL PANEL`*bleed_coef_postop$x[7]+
+                                                    coalesce(analytical_postopv2$`POCT CRITICAL PANEL`, 0)*bleed_coef_postop$x[7]+
                                                     analytical_postopv2$`TEG PANEL`*bleed_coef_postop$x[8]+
                                                     analytical_postopv2$red_blood_cell_or_whole_blood_transfusion*bleed_coef_postop$x[9])))
 

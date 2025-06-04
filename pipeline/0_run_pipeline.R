@@ -7,6 +7,8 @@
 # and report generation pipeline. It performs the following steps:
 # 
 # TODO: may need 00_mount_data first
+
+# sudo mount -t cifs -o credentials=~/credentials/smbcredentials //data.ucdenver.pvt/dept/SOM/ACCORDS/Data/ACCORDSGPUHDCDATA ~/AccordsAspin_HDC_data/
 # 3 user input parameters: year_w, date_str, save_date_str
 # 
 # Ensure that all required scripts and files are present in the 
@@ -64,13 +66,6 @@ parent_dir <- dirname(pipeline_dir)
 global_vars_file      <- file.path(pipeline_dir, "global_vars.R")
 cat("Step 1: Loading global variables...\n")
 source_if_exists(global_vars_file)
-cat("Step 1 completed.\n\n")
-
-# TODO: 
-# year, date and time related variables
-# year_w <- 2023
-# date_str <- "20241031"
-# save_date_str <- "20241031_2023"
 
 # Log the start of the pipeline
 cat("=====================================================\n")
@@ -82,25 +77,30 @@ cat("  Prcoessed data and Reports will be saved to:", save_date_str, "\n\n")
 cat("=====================================================\n\n")
 
 
+cat("Step 1 completed.\n\n")
+
+
+###########################
+
 cat("Step 2: Creating necessary directories based on save_date_str...\n")
 # Define the directories to create
-data_dir <- file.path(parent_dir, "data", save_date_str)
+
 processed_data_dir <- file.path(parent_dir, "processed_data", save_date_str)
 reports_dir        <- file.path(parent_dir, "reports", save_date_str)
 pilot_reports_dir  <- file.path(parent_dir, "reports",  paste0("pilot_", save_date_str))
 
-dest_dir_all <- file.path("~/OneDrive/Documents/Support_proj/Aspin/reports", 
-                          paste0("all_", save_date_str))
-dest_dir_pilot <- file.path("~/OneDrive/Documents/Support_proj/Aspin/reports",
-                            paste0("pilot_", save_date_str))
+# dest_dir_all <- file.path("~/OneDrive/Documents/Support_proj/Aspin/reports", 
+#                           paste0("all_", save_date_str))
+# dest_dir_pilot <- file.path("~/OneDrive/Documents/Support_proj/Aspin/reports",
+#                             paste0("pilot_", save_date_str))
 
 # Create the directories if they do not exist
-create_dir_if_not_exists(data_dir)
+
 create_dir_if_not_exists(processed_data_dir)
 create_dir_if_not_exists(reports_dir)
 create_dir_if_not_exists(pilot_reports_dir)
-create_dir_if_not_exists(dest_dir_all )
-create_dir_if_not_exists(dest_dir_pilot)
+# create_dir_if_not_exists(dest_dir_all )
+# create_dir_if_not_exists(dest_dir_pilot)
 cat("Step 2 completed.\n\n")
 
 # Define file paths
@@ -140,7 +140,17 @@ for (script in scripts_to_run) {
   source_if_exists(script_path)
 }
 cat("All data processing scripts have been executed.\n\n")
-cat("Step 4 completed.\n\n")
+# ------------------------
+# check step 4
+# ------------------------
+if(file.exists(paste0(fp_processed, "postop_observed_rate.csv")) && 
+   file.exists(paste0(fp_processed, "preop_expected_rate.csv")) ){
+  cat("Step 4 completed: Good.\n\n")
+}else{
+  cat("Step 4 went wrong!.\n\n")
+}
+
+
 
 
 ################### dot not run #########################

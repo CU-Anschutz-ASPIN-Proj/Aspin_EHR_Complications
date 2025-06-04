@@ -1,0 +1,983 @@
+---
+title: "Fuzzy String Matching: Aspin 2024, non-infectious Complications"
+author: "Aspin Analytical Team: Guannan Shen"
+date: last-modified
+execute: 
+  warning: false
+  echo: false
+format:
+    docx:
+      toc: true
+      toc-depth: 5
+  # html:
+  #   toc: true
+  #   toc-depth: 5
+  #   toc-title: "Jump To"
+  #   highlight-style: github
+  #   code-line-numbers: true
+  #   page-layout: article
+  #   embed-resources: true
+editor: source
+---
+
+```{r}
+#| label: libraries
+#| include: false
+
+## set up workspace
+library(readr)
+library(stringr)
+library(magrittr)
+library(tidyverse)
+library(kableExtra)
+
+```
+
+
+```{r}
+#| label: global_vars
+#| include: false
+
+source("./global_vars.R")
+
+# TODO: remove, REMOVE, useNA = "ifany"
+# TODO: Qs, pregnancy patients, include or not?
+# TODO: Qs, for post-op predictors "This says “pre surg,” so if this is supposed to be a post-op predictor, it would be inappropriate"
+
+df_lab <- read_csv(paste0("../data/", date_str, "/", fp_prefix, 
+                       "Table11_Lab_", date_str, ".csv"))
+df_proc <- read_csv(paste0("../data/", date_str, "/", fp_prefix, 
+                        "Table5_Procedures_", date_str, ".csv"))
+
+
+df_medi <- read_csv(paste0("../data/", date_str, "/", fp_prefix, 
+                        "Table7_Medications_", date_str, ".csv"))
+
+# Filter by this year 
+Epic_data <- readRDS(paste0(fp_processed,
+                            "ICD10_uni_surg_id_spec.rds"))
+#_r represents reduced version, speeds up run time and reduce RAM usage
+Epic_data_r <- Epic_data%>%
+  dplyr::select(arb_person_id, SurgeryDate_asDate, SurgeryID)
+
+
+df_lab %<>% dplyr::select(arb_person_id,
+                          LabPanelName) %>% filter(arb_person_id %in% Epic_data_r$arb_person_id)
+
+
+df_proc %<>%
+  dplyr::select(
+    arb_person_id, 
+    arb_encounter_id, 
+    ProcedureOrderDate, 
+    ProcedureEventDate, 
+    ProcedureName
+  ) %>% filter(arb_person_id %in% Epic_data_r$arb_person_id)
+
+```
+
+# Combine Procedures/LabPanels into One Predictor
+
+Only match for year 2024. Total sample size is **89339**.
+
+## Pre-op Procedures
+
+### Pre-op/Post-op Predictor: CT.BODY.CHEST.PELV.W.ABD
+
+Original code to match labels:    
+
+"OS CT BODY COMPARE-NO READ"  
+"CT CHEST/PELV W, ABD W/WO CONTRAST"  
+".PET/CT WHOLE BODY NO IV CONTRAST"  
+"ABN ONLY CT ABD & PELVIS W/O CONTRAST"  
+"ABN ONLY CT ABD&PELV 1+ SECTION/REGNS"  
+"Computerized Tomography (CT Scan) of Abdomen and Pelvis using Low Osmolar Contrast"  
+"CT ABD W/WO, PELVIS WITH CONT"  
+"CT ABD/PELVIS W CONTRAST"  
+"CT ABD/PELVIS W/WO CONTRAST"  
+"CT ABD/PELVIS WITHOUT CONTRAST"  
+"CT ABDO RETRO FINE NEEDLE ASPIRATION"  
+"CT ABDOMEN W AND WO CONTRAST"  
+"CT ABDOMEN WITH CONTRAST"  
+"CT ABDOMEN WITHOUT CONTRAST"  
+"CT ABDOMEN/RET MASS BIOPSY"  
+"CT ANGIO ABDOMEN"  
+"CT CHEST W, ABD W/WO CONTRAST"  
+"CT CHEST/ABD W CONTRAST"  
+"CT CHEST/ABD WO CONTRAST"  
+"CT CHEST/ABD/PELV W CONTRAST"  
+"CT CHEST/ABD/PELV W/WO CONTRAST"  
+"CT CHEST/ABD/PELV WO CONTRAST"  
+"CT CHEST/PELV W, ABD W/WO CONTRAST"  
+"OS CT ABDOMEN COMPARE-NO READ"  
+"OS CT BODY INTERPRETATION"  
+"PR CT SCAN OF ABDOMEN COMBO"  
+"PR CT SCAN OF ABDOMEN CONTRAST"  
+"PR CT SCAN OF PELVIS COMBO"  
+"PR CT SCAN OF PELVIS CONTRAST"  
+"PR CT SCAN,ABDOMEN,W/O CONTRAST"  
+
+
+My understanding, combine procedures related to CT scans for Body, Chest, ABD (abdomen) and Pelv (pelvis). 
+
+Frequency table with 2024 data using fuzzy string match: 
+
+```{r}
+#| label: CT.BODY.CHEST.PELV.W.ABD
+
+
+name1 <- "\\bCT\\b.*\\b(chest|body)\\b"
+name2 <- "\\bCT\\b.*\\b(abd(omen)?|pelv(is)?)\\b"
+
+# TODO: no "biopsy", no "abscess drain/drn", no "drn w tube", no "tube placement"
+# TODO: no "cryo ablation", no "fine needle aspiration", no "anes chg"
+
+# exclude these unwanted procedures
+exclude_pattern <- "\\b(?:biopsy|abscess|drn\\s*w\\s*tube|tube\\s*placement|cryo\\s*ablation|fine\\s*needle\\s*aspiration|anes\\s*chg)\\b"
+
+proc_search <- df_proc %>% 
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+
+
+
+### Pre-op Predictor: STRESS.NUCLEAR
+
+Original code:   
+
+"STRESS NUCLEAR - UCH"  
+"DOBUTAMINE STRESS NUCLEAR SCAN PROTOCOL"  
+
+
+My understanding, combine procedures related to "cardiac nuclear stress test".
+
+"Nuclear Stress" vs "Stress Nuclear"?
+
+Frequency table with 2024 data using fuzzy string match:   
+
+```{r}
+#| label: STRESS.NUCLEAR
+
+
+# match any “STRESS NUCLEAR” (e.g. “STRESS NUCLEAR – UCH”)
+# name1 <- "\\bSTRESS\\s+NUCLEAR\\b"
+name1 <- "STRESS NUCLEAR"
+
+# match the dobutamine‐pharmacologic version explicitly
+# name2 <- "\\bDOBUTAMINE\\s+STRESS\\s+NUCLEAR\\b"
+name2 <- "NUCLEAR STRESS"
+
+# TODO: "this one is good"
+
+proc_search <- df_proc %>% 
+  # TODO: no result for rbc unit, too many for "rbc"
+  filter(str_detect(ProcedureName, regex(name1, 
+                                         ignore_case = TRUE))
+         | str_detect(ProcedureName, regex(name2, 
+                                           ignore_case = TRUE))
+         ) 
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+
+### Pre-op Predictor, LabPanelName: POTASSIUM
+
+
+Original code:  
+
+"POTASSIUM SERUM/PLASMA"  
+"PR ASSAY OF SERUM POTASSIUM"  
+"I STAT POTASSIUM"  
+"POCT POTASSIUM"  
+"POTASSIUM WHOLE BLOOD"  
+
+
+This is to combine Lab Panels related to "potassium measurements", including serum, plasma, blood.  
+
+Do we want to include urine potassium?
+
+Frequency table with 2024 data using fuzzy string match:   
+
+```{r}
+#| label: POTASSIUM
+
+# 1) any potassium assay in serum, plasma or whole blood
+# name1 <- "\\bPOTASSIUM\\b.*\\b(?:SERUM|PLASMA|BLOOD|WB)\\b"
+
+name1 <- "POTASSIUM"
+
+# 2) any iSTAT, POCT or generic assay of potassium
+name2 <- "\\b(?:I[- ]?STAT|POCT|ASSAY)\\b.*\\bPOTASSIUM\\b"
+
+# TODO: no "urine", no "or potassium wb", no "CHANNEL ANTIBODY"
+
+# exclude unwanted panels
+exclude_pattern <- "urine|or\\s*potassium\\s*wb|channel\\s*antibody"
+
+lab_search <- df_lab %>% 
+  filter( ( str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) ) &
+    !str_detect(LabPanelName, regex(exclude_pattern, ignore_case = TRUE))
+         ) 
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+
+```
+
+
+### Pre-op Predictor, procedure: CENTRAL LINE
+
+Original code:  
+
+"CENTRAL LINE"  
+"CENTRAL LINE INSERTION"  
+
+
+Combine procedure related to "a central line (i.e. a central venous catheter) procedure". 
+
+Frequency table with 2024 data using fuzzy string match:   
+
+```{r}
+#| label: CENTRAL
+
+# generic “central line”
+name1 <- "\\bCENTRAL\\s+LINE\\b"
+
+# the insertion procedure explicitly
+name2 <- "\\bCENTRAL\\s+LINE\\s+INSERTION\\b"
+
+# TODO: no "assess need", no "care", no "discontinue"
+
+# exclude these unwanted keywords
+exclude_pattern <- "assess\\s+need|care|discontinue"
+
+proc_search <- df_proc %>%
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+## Post-op
+
+### Post-op Predictor: CBC_auto_diff_comb
+
+Combine Lab Panels related to "complete blood count with differential test".
+
+This one works fine, no need to change. 
+
+The fuzzy string match shown below gives us the same results as direct match. 
+
+```{r}
+#| label: CBC_auto_diff_comb
+
+
+# 1) CBC with an automated differential
+name1 <- "\\bCBC\\b.*\\bAUTO\\s+DIFF\\b"
+
+# 2) CBC without auto or with manual diff
+name2 <- "\\bCBC\\b.*\\b(?:NO\\s+AUTO|MANUAL)\\s+DIFF\\b"
+
+# TODO: this one is good 
+
+lab_search <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+         ) 
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+
+
+```
+
+### Post-op Predictor: respiratory_comb
+
+Original code:  
+
+"RESPIRATORY CULTURE"  
+"QUANTITATIVE RESPIRATORY CULTURE - NORTH/SOUTH ONLY"  
+
+
+Combine Lab Panels related to "lab test a culture of a respiratory specimen".   
+
+Frequency table with 2024 data using fuzzy string match:      
+
+```{r}
+#| label: respiratory_comb
+
+
+# 1) Any “blood gas” or “blood gases”
+name1 <- "RESPIRATORY CULTURE"
+
+# 2) The GEM platform variant explicitly
+name2 <- "RESPIRATORY CULTURE"
+
+# TODO: this is good 
+
+lab_search <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+         ) 
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+```
+
+
+
+
+### Post-op Predictor: BLOOD_GASES_comb
+
+Original code:  
+
+"(GEM) BLOOD GASES 4000"  
+"ARTERIAL BLOOD GAS"  
+"BLOOD GAS ARTERIAL WITH ELECTROLYTES"  
+"VENOUS BLOOD GAS"  
+
+
+Combine Lab Panels related to "variants of a blood‐gas analysis".   
+
+Frequency table with 2024 data using fuzzy string match:      
+
+```{r}
+#| label: BLOOD_GASES_comb
+
+
+# 1) Any “blood gas” or “blood gases”
+name1 <- "\\bBLOOD\\s+GAS(?:ES)?\\b"
+
+# 2) The GEM platform variant explicitly
+name2 <- "\\(GEM\\)\\s*BLOOD\\s+GASES?"
+
+# TODO: no "cord", because cord may mean umbilical cord for babies
+
+exclude_term <- "\\bCORD\\b"
+
+lab_search <- df_lab %>%
+  filter(
+    # Original conditions for detecting blood gas panels
+    (
+      str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) |
+      str_detect(LabPanelName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+    # New condition: LabPanelName should NOT contain the exclude_term_cord
+    !str_detect(LabPanelName, regex(exclude_term, ignore_case = TRUE))
+)
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: red_blood_cell_or_whole_blood_transfusion
+
+Original code:  
+
+"ED BLOOD TRANSFUSION PROCEDURE"  
+"PACKED CELL TRANSFUSION"  
+"BLOOD TRANSFUSION: USE ORDER SET ONLY. IF EMERGENT, CALL BLOOD BANK."  
+"TRANSFUSE RED BLOOD CELLS"  
+"Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach"  
+
+
+Combine procedures related to "red‐blood‐cell (RBC) transfusion". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+```{r}
+#| label: red_blood_cell_or_whole_blood_transfusion
+
+# catches “BLOOD TRANSFUSION” OR “PACKED CELL” OR “RED BLOOD CELLS”
+name1 <- "\\b(?:BLOOD\\s+TRANSFUSION|PACKED\\s+CELL|RED\\s+BLOOD\\s+CELLS?)\\b"
+
+# catches the standalone “RBC UNIT”
+name2 <- "\\bRBC\\s*UNIT\\b"
+
+# TODO: no "products of conception"
+exclude_pattern <- "\\bPRODUCT(?:S)?\\s+OF\\s+CONCEPTION\\b"
+
+proc_search <- df_proc %>%
+  filter(
+    # Original conditions for detecting relevant procedures
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+    # New condition: ProcedureName should NOT contain the exclude_term_poc
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+
+### Post-op Predictor: intubation
+
+Original code:  
+
+"Change Endotracheal Airway in Trachea, External Approach"  
+"INSERT ENDOTRACHEAL TUBE"  
+"Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening"  
+"Insertion of Endotracheal Airway into Trachea, Via Natural or Artificial Opening Endoscopic"  
+
+
+Combine procedures related to "fundamental procedure: placing or exchanging an endotracheal tube (i.e. intubation)". 
+
+
+Frequency table with 2024 data using fuzzy string match:    
+
+```{r}
+#| label: intubation
+
+# 1) any INSERT/INSERTION of an endotracheal tube or airway
+name1 <- "\\bINSERT(?:ION)?\\b.*\\bENDOTRACHEAL\\b"
+
+# name1 <- "Endotracheal"
+
+# 2) any CHANGE of an endotracheal airway
+name2 <- "\\bCHANGE\\b.*\\bENDOTRACHEAL\\b"
+
+# TODO: this is good 
+
+proc_search <- df_proc %>%
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+    str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: Blood.products
+
+Original code:  
+
+"VTE PLATELET MONITORING FOR IV UFH PATIENTS"  
+"AHG CROSSMATCH"  
+"ANTIBODY PATIENT INTERPS 1-5"  
+"PLATELETS UNIT"  
+"PREPARE PLATELETS FOR TRANSFUSION"  
+
+
+Combine procedures related to "part of the transfusion medicine workflow, specifically around platelet products and compatibility testing". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+```{r}
+#| label: Blood.products
+
+# 1) Matches "PLATELET UNIT" or "PLATELETS UNIT"
+name1 <- "\\bPLATELET(?:S)?\\s+UNIT\\b"
+
+# 2) Matches "PREPARE PLATELET FOR TRANSFUSION" or "PREPARE PLATELETS FOR TRANSFUSION"
+name2 <- "\\bPREPARE\\s+PLATELET(?:S)?\\s+FOR\\s+TRANSFUSION\\b"
+
+# TODO: only keep "PLATELETS UNIT" and "PREPARE PLATELETS FOR TRANSFUSION" 
+
+lab_search <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+         ) 
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: echo
+
+Original code:  
+
+"CARD DX ECHO COMPLETE TTE TRANSTHORACIC STANDARD"  
+"CARD DX ECHO LIMITED TTE 2D TRANSTHORACIC FOLLOW UP FOCUSED EXAM"  
+"CARD DX ECHO TRANSESOPHAGEAL TEE"  
+"DOBUTAMINE STRESS ECHO PROTOCOL"  
+"ECHO ADULT COMPLETE TTE"  
+"ECHO TRANSESOPHAGEAL TEE"  
+"ECHO WITH DEFINITY CONTRAST PROTOCOL"  
+"OS CV ECHO COMPARE-NO READ"  
+"PR DOPPLER ECHO HEART,LIMITED,F/U"  
+"PR ECHO HEART XTHORACIC,COMPLETE W DOPPLER"  
+"PR ECHO HEART XTHORACIC,LIMITED"  
+"PR ECHO TRANSESOPHAG R-T 2D W/PRB IMG ACQUISJ I&R"  
+"PR ECHO TTHRC R-T 2D W/WO M-MODE REST&STRS CONT ECG"  
+"STRESS ECHO - UCH"  
+"STRESS ECHO DOBUTAMINE"  
+"ECHO ADULT LIMITED TTE"  
+
+
+Combine procedures related to "echocardiograms (ultrasound of the heart)". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: echo
+
+# 1) Any echo exam (TTE, TEE, Doppler, contrast, etc.)
+name1 <- "\\bECHO\\b"
+
+# 2) Stress echo protocols (exercise or dobutamine)
+name2 <- "\\b(?:STRESS\\s+ECHO|DOBUTAMINE\\s+STRESS\\s+ECHO)\\b"
+
+# TODO, no " PERICARDIOCENTESIS", no "PEDIATRIC", no "intracardiac"
+# TODO, no " fetal ", no " anes " (Anesthesia), no " amb "
+# TODO, no "TEE GUID", no "pelvic", no "TRANSRECTAL"
+# TODO, no "scrotum"
+exclusion_regex_parts <- c(
+  "\\bPERICARDIOCENTESIS\\b",
+  "\\bPEDIATRIC\\b",
+  "\\BINTRACARDIAC\\b",
+  "\\bFETAL\\b",           # Handles " fetal " by matching the whole word
+  "\\bANES\\b",            # Handles " anes "; using \b for whole word/abbreviation
+  "\\bAMB\\b",             # Handles " amb "; using \b for whole word/abbreviation
+  "\\bTEE\\s+GUID\\b",     # Specific phrase "TEE GUID"
+  "\\bPELVIC\\b",
+  "\\bTRANSRECTAL\\b",
+  "\\bSCROTUM\\b"
+)
+
+# Combine exclusion terms into a single regex pattern
+exclude_pattern <- paste(exclusion_regex_parts, collapse = "|")
+
+proc_search <- df_proc %>%
+  filter(
+    # Initial condition: ProcedureName must match name1 OR name2
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator
+    # Exclusion condition: ProcedureName must NOT match any of the exclude_pattern terms
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+)
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+### Post-op Predictor: Orthopedic.problems
+
+"PARTIAL HIP REPLACEMENT"  
+
+Partial hip replacement---We call this hemi-arthroplasty.  
+
+But for the variable, “partial hip replacement”, we should keep it just as partial hip replacements, and not include total hip replacements.  
+
+Combine procedures related to "Orthopedic.problems". 
+
+PARTIAL HIP REPLACEMENT can not be found in 2024 HDC EHR data. 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: Orthopedic.problems
+
+# only match "PARTIAL HIP REPLACEMENT"
+name1 <- "\\bPARTIAL\\s+HIP\\s+REPLACEMENT\\b"
+
+# and also match the "PR PARTIAL HIP REPLACEMENT" prefix
+name2 <- "\\bPR\\s+PARTIAL\\s+HIP\\s+REPLACEMENT\\b"
+
+# TODO: only focus on partial, thus for now, 
+# TODO: only "PARTIAL HIP REPLACEMENT" and "PR PARTIAL HIP REPLACEMENT"
+# 
+
+proc_search <- df_proc %>%
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+    str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+### Post-op Predictor: troponin
+
+Original code:  
+
+"PR ASSAY OF TROPONIN, QUANT"  
+"ISTAT TROPONIN"  
+"POCT TROPONIN"  
+"TROPONIN I"  
+
+Combine procedures related to "the measurement of troponin, the cardiac biomarker". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+```{r}
+#| label: troponin
+
+# 1) Generic troponin measurement
+name1 <- "\\bTROPONIN\\b"
+
+# 2) Platform or assay qualifiers before “troponin”
+name2 <- "\\b(?:ISTAT|POCT|ASSAY)\\b.*\\bTROPONIN\\b"
+
+# TODO: this is good 
+
+lab_search <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+         ) 
+
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: Social.planning
+
+Original code:  
+
+"IP CONSULT TO DISCHARGE PLANNING"      
+"IP CONSULT TO SOCIAL WORK"   
+
+Combine procedures related to "clinical service: an inpatient consult to your hospital’s social‐planning/discharge‐planning teams". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: Social.planning
+
+# 1) any consult to discharge planning
+name1 <- "\\bCONSULT\\b.*\\bDISCHARGE\\s+PLANNING\\b"
+
+# 2) any consult to social work
+name2 <- "\\bCONSULT\\b.*\\bSOCIAL\\s+WORK\\b"
+
+# TODO: no "DISCHARGE"
+
+# Define the regex for the term to be excluded
+exclude_term <- "\\bDISCHARGE\\b"
+
+proc_search <- df_proc %>%
+  filter(
+    # Initial condition: ProcedureName must match name1 OR name2
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator
+    # Exclusion condition: ProcedureName must NOT match the exclude_term_discharge
+    !str_detect(ProcedureName, regex(exclude_term, ignore_case = TRUE))
+)
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+ 
+```
+
+
+### Post-op Predictor: Discharge.planning
+
+Original code:  
+
+"OT EVAL AND TREAT"    
+"PT EVAL AND TREAT"    
+"RT HOME OXYGEN EVALUATION (INPATIENT ORDER)"    
+
+Combine procedures related to "allied‐health evaluations done as part of discharge planning". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: Discharge.planning
+
+# 1) any OT or PT eval & treatment
+name1 <- "\\b(?:OT|PT)\\s+EVAL(?:\\s+AND\\s+TREAT)?\\b"
+
+# 2) any oxygen evaluation
+name2 <- "\\bOXYGEN\\s+EVALUATION\\b"
+
+# TODO: add, "DISCHARGE PLANNING"
+# 3) any discharge planning
+name3 <- "\\bDISCHARGE\\s+PLANNING\\b"
+
+# TODO: no "wound"
+# Define the regex for the term to be excluded
+exclude_term <- "\\bWOUND\\b"
+
+proc_search <- df_proc %>%
+  filter(
+    # Inclusion criteria: (name1 OR name2 OR name3_discharge_planning)
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name3, ignore_case = TRUE))
+    ) & # AND operator for combining inclusion and exclusion
+    # Exclusion criterion: ProcedureName must NOT match the exclude_term_wound
+    !str_detect(ProcedureName, regex(exclude_term, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+### Post-op Predictor: XRAY
+
+Original code:  
+
+".XR CHEST SINGLE (AP)"           
+"XR CHEST SINGLE VIEW"   
+
+Combine procedures related to "XRay CHEST SINGLE". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: XRAY
+
+# 1) generic blood transfusion
+name1 <- "XR(?:ay) CHEST SINGLE"
+
+# 2) red‐cell or packed‐cell transfusion
+name2 <- "CHEST SINGLE"
+
+# TODO: this is good 
+
+proc_search <- df_proc %>%
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+    str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: POINT.OF.CARE
+
+Original code:  
+
+"POC(EPOC) ABG"    
+"POINT OF CARE TESTS"               
+
+
+Combine procedures related to "point‑of‑care testing". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: POINT.OF.CARE
+
+# 1) any POC blood gas
+name1 <- "\\bPOC\\b"
+
+# 2) any “point of care” test
+name2 <- "\\bPOINT\\s+OF\\s+CARE(?:\\s+TESTS?)?\\b"
+
+# TODO, no "extraction", no "guidance", no "AMB STREP", no "VENOUS ACCESS", no "ARTERIAL ACCESS"
+
+exclusion_regex_list <- c(
+  "\\bEXTRACTION\\b",
+  "\\bGUIDANCE\\b",
+  "\\bAMB\\s+STREP\\b",
+  "\\bVENOUS\\s+ACCESS\\b",
+  "\\bARTERIAL\\s+ACCESS\\b"
+)
+
+# Combine exclusion terms into a single regex pattern using OR (|)
+exclude_pattern <- paste(exclusion_regex_list, collapse = "|")
+
+proc_search <- df_proc %>%
+  filter(
+    # Initial inclusion criteria: (name1 OR name2)
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: the following condition must also be true
+    # Exclusion criteria: ProcedureName must NOT contain any of the excluded terms
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  )
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+### Post-op Predictor: URINE
+
+Original code:  
+
+"ELECTROLYTES RANDOM URINE"  
+"SODIUM RANDOM URINE"  
+"UREA RANDOM URINE"  
+
+
+Combine procedures related to "random‐urine chemistry tests". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+```{r}
+#| label: URINE
+
+# 1) any random‐urine test
+name1 <- "\\bRANDOM\\s+URINE\\b"
+
+# 2) any of the specific analyte panels in urine
+name2 <- "\\b(?:ELECTROLYTES|SODIUM|UREA)\\s+RANDOM\\s+URINE\\b"
+
+# TODO: this is good 
+
+lab_search <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+         ) 
+# table(lab_cdiff) %>% names()
+table(lab_search$LabPanelName, useNA = "ifany") %>% kable()
+
+# table(lab_search$LabPanelName) %>% names()
+
+```
+
+### Post-op Predictor: dialysis
+
+Original code:  
+
+"HEMODIALYSIS"  
+"INSERTION PERITONEAL DIALYSIS CATHETER"  
+"PERITONEAL DIALYSIS"  
+"PR DIALYSIS PROCEDURE"  
+"PR HEMODIALYSIS PROCEDURE W/ PHYS/QHP EVALUATION"  
+"PR UNSCHED DIALYSIS ESRD PT HOS"  
+"DIALYSIS SOLUTIONS"  
+
+
+Combine procedures related to "dialysis procedures". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: dialysis
+
+# 1) generic “dialysis” (catches DIALYSIS, DIALYSIS SOLUTIONS, PR DIALYSIS PROCEDURE, etc.)
+name1 <- "\\bDIALYSIS\\b"
+
+# 2) modality‑specific (hemodialysis or peritoneal dialysis)
+name2 <- "\\b(?:HEMO|PERITONEAL).*?DIALYSIS\\b"
+
+# TODO: must include, "PERITONEAL" or "insertion" or "acute" or "phys" or "PR DIALYSIS PROCEDURE" or "HEMOSTATS" or "REPEATED" or "PR UNSCHED DIALYSIS ESRD PT HOS "
+
+# must also include one of these keywords
+must_include <- "\\b(?:PERITONEAL|INSERTION|ACUTE|PHYS|PR\\s+DIALYSIS\\s+PROCEDURE|HEMOSTATS|REPEATED|PR\\s+UNSCHED\\s+DIALYSIS\\s+ESRD\\s+PT\\s+HOS)\\b"
+
+proc_search <- df_proc %>%
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+    str_detect(ProcedureName, regex(must_include, ignore_case = TRUE))
+    &
+    !str_detect(ProcedureName, regex("removal", ignore_case = TRUE))
+  )
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+
+### Post-op Predictor: bloodtrans
+
+Original code:  
+
+"PACKED CELL TRANSFUSION"  
+"TRANSFUSE RED BLOOD CELLS"  
+"Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach"  
+"RBC UNIT"  
+
+
+Combine procedures related to "red‐blood‐cell transfusion". 
+
+Frequency table with 2024 data using fuzzy string match:    
+
+
+
+```{r}
+#| label: bloodtrans
+
+# catches “BLOOD TRANSFUSION” OR “PACKED CELL” OR “RED BLOOD CELLS”
+name1 <- "\\b(?:BLOOD\\s+TRANSFUSION|PACKED\\s+CELL|RED\\s+BLOOD\\s+CELLS?)\\b"
+
+# catches the standalone “RBC UNIT”
+name2 <- "\\bRBC\\s*UNIT\\b"
+
+# TODO: no "products of conception"
+
+# TODO: no "products of conception"
+exclude_pattern <- "\\bPRODUCT(?:S)?\\s+OF\\s+CONCEPTION\\b"
+
+proc_search <- df_proc %>%
+  filter(
+    # Original conditions for detecting relevant procedures
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+    # New condition: ProcedureName should NOT contain the exclude_term_poc
+    !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+)
+
+table(proc_search$ProcedureName, useNA = "ifany") %>% kable()
+
+```
+
+## Notes
+
+### Notes by Dr. Ryan Jacobs
+
+
+In summary, most looked okay to me except for the following
+
+CTs
+A couple of procedures that indicate CT-guided procedures moreso than a CT itself
+Potassium
+Exclude urine (clinically different from blood-based potassium)
+Central line
+"Do not use discontinue central line" or some of the nursing-related orders (assess need for central line, central line care, central line dressing care)
+Blood products
+Do not include majority of platelet orders except for "Prepare platelets for transfusion"
+Dialysis
+Gets more complex as some of the orders are related to workup/evaluation of new or existing semi-elective dialysis access rather than starting dialysis acutely. I was more detailed with include vs do not include for this section.
+
+Re: the email thread with Dr. Hogan about partial vs total hip replacement: most of these procedure names do not seem to stratify between partial vs total; they just talk about what material is used as the substitute (eg: ceramic vs metal vs synthetic +/- cement). Seems like these materials can be used for both partial and open approaches. Perhaps need to look up "arthroplasty" based upon the email thread?
+
+### Notes by Dr. Rob Meguid
+
+But for the variable, “partial hip replacement”, we should keep it just as partial hip replacements, and not include total hip replacements.
+

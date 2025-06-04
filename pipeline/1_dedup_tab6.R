@@ -45,7 +45,7 @@ table(data_full$FacilityName)
 # %>%
 #   filter(FacilityName == "UCH")
 
-tab6_fa_path <- paste0("../processed_data/", date_str, "/", "table6_facility.csv")
+tab6_fa_path <- paste0("../processed_data/", save_date_str, "/", "table6_facility.csv")
 write.csv(data_full, tab6_fa_path)
           # TODO: row.name = TRUE
 

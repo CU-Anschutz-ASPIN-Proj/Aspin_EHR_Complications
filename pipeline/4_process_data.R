@@ -2,10 +2,523 @@
 
 library(lubridate)
 library(tidyr)
+library(tidyverse)
 library(plyr)
 library(dplyr)
-library(tidyverse)
 library(fastDummies)
+library(bit64)
+library(magrittr)
+
+#############################################################################
+# regualr expression match ProcedureName or LabPanelName
+# the vector of matched strings should not be removed by rm
+
+# 1. first, generate string vectors here, 
+# 2. then, filter lab or Proc_r using those vectors, as |(lab_cohort_r$LabPanelName %in% CDIFFs)
+
+# 3. then in 5_combine_data_, check message(CDIFFs_to_combine), avoid using grep again
+# 4. may be using CDIFFs using CDIFFs[CDIFFs %in% colnames(analytical_postopv2)]
+
+# TODO: 5. check 2024 Aspin infectious only pipeline of message(cultures_to_combine), 
+# TODO: to resolve conflicts message(blood_cultures_to_combine), message(urine_cultures_to_combine), message(CDIFFs_to_combine)
+
+# finally, using rowSums ifelse(rowSums(analytical_preopv2[, cultures_to_combine])>=1,1,0)
+
+
+df_lab <- Lab_r[Lab_r$arb_person_id %in% Epic_data_r$arb_person_id,] %>% dplyr::select(LabPanelName)
+
+df_proc <- Proc_r[Proc_r$arb_person_id %in% Epic_data_r$arb_person_id,] %>% dplyr::select(ProcedureName)
+
+######### temp check #############
+# length(df_proc$ProcedureName)
+# name1 <- "OS CT BODY COMPARE-NO READ"
+# 
+# temp_proc_list <- df_proc %>% 
+#   filter(
+#     str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) 
+#   )
+# table(temp_proc_list$ProcedureName, useNA = "ifany")
+################# pre-op
+# POCT CRITICAL PANEL
+name1 <- "\\bPOCT\\s+CRITICAL\\s+PANEL\\b"
+# table(df_lab$LabPanelName)
+# Create a list of matching LabPanelNames
+POCT_CRITICAL_PANEL_list <- df_lab %>%
+  dplyr::filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE))) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# sum(df_lab$LabPanelName == "POCT CRITICAL PANEL")
+
+# ANTIBODY PATIENT INTERPS 1-5
+# Define the regex match both "ANTIBODY PATIENT INTERPS" and "ANTIBODY INTERPS"
+regex_antibody_interps <- "\\bANTIBODY\\s+(?:PATIENT\\s+)?INTERPS\\b"
+# table(df_lab$LabPanelName)
+# Create a list of matching LabPanelNames
+ANTIBODY_PATIENT_INTERPS_list <- df_lab %>%
+  dplyr::filter(str_detect(LabPanelName, regex(regex_antibody_interps, ignore_case = TRUE))) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# CLOS LARGE BOWEL BIOPSY
+name1 <- "\\b(?:CLOS|COLONOSCOPY)\\b.*\\bBIOPSY\\b"
+name2 <- "\\b(?:LARGE\\s*BOWEL|COLON)\\b.*\\bBIOPSY\\b"
+
+CLOS_LARGE_BOWEL_BIOPSY_list <- df_proc %>% 
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    # &
+    #   !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# TODO: match: UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION
+name1 <- "\\bUPDATE\\s+PATIENT\\s+CLASS\\b"
+
+UPDATE_PATIENT_CLASS_list <- df_proc %>% 
+  filter(
+     str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+# sum(df_proc$ProcedureName == "UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION")
+# CPAP OVERNIGHT
+name1 <- "\\bCPAP\\s+OVERNIGHT\\b"
+
+CPAP_OVERNIGHT_list <- df_proc %>% 
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+# sum(df_proc$ProcedureName == "CPAP OVERNIGHT")
+# sum(df_proc$ProcedureName == "RETURN PATIENT")
+# sum(df_proc$ProcedureName == "ADMIT PATIENT")
+# sum(df_proc$ProcedureName == "TRANSFER PATIENT")
+# sum(df_proc$ProcedureName == "UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION")
+# CT.BODY.CHEST.PELV.W.ABD
+
+name1 <- "\\bCT\\b.*\\b(chest|body)\\b"
+name2 <- "\\bCT\\b.*\\b(abd(omen)?|pelv(is)?)\\b"
+
+# : no "biopsy", no "abscess drain/drn", no "drn w tube", no "tube placement"
+# : no "cryo ablation", no "fine needle aspiration", no "anes chg"
+
+# exclude these unwanted procedures
+exclude_pattern <- "\\b(?:biopsy|abscess|drn\\s*w\\s*tube|tube\\s*placement|cryo\\s*ablation|fine\\s*needle\\s*aspiration|anes\\s*chg)\\b"
+
+CT_BODY_CHEST_PELV_W_ABD_list <- df_proc %>% 
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+
+# STRESS.NUCLEAR
+name1 <- "STRESS NUCLEAR"
+name2 <- "NUCLEAR STRESS"
+
+STRESS_NUCLEAR_list <- df_proc %>% 
+  # TODO: no result for rbc unit, too many for "rbc"
+  filter(str_detect(ProcedureName, regex(name1, 
+                                         ignore_case = TRUE))
+         | str_detect(ProcedureName, regex(name2, 
+                                           ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# POTASSIUM
+
+name1 <- "POTASSIUM"
+# 2) any iSTAT, POCT or generic assay of potassium
+name2 <- "\\b(?:I[- ]?STAT|POCT|ASSAY)\\b.*\\bPOTASSIUM\\b"
+
+# exclude unwanted panels
+exclude_pattern <- "urine|or\\s*potassium\\s*wb|channel\\s*antibody"
+
+POTASSIUM_list <- df_lab %>% 
+  filter( ( str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+            | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) ) &
+            !str_detect(LabPanelName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+    dplyr::distinct(LabPanelName) %>% 
+    dplyr::pull(LabPanelName)
+
+
+# CENTRAL line
+
+# generic “central line”
+name1 <- "\\bCENTRAL\\s+LINE\\b"
+
+# the insertion procedure explicitly
+name2 <- "\\bCENTRAL\\s+LINE\\s+INSERTION\\b"
+
+# exclude these unwanted keywords
+exclude_pattern <- "assess\\s+need|care|discontinue"
+
+CENTRAL_line_list <- df_proc %>%
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+################# post-op
+
+# Post CDIFFs lab
+
+# Streamlined dplyr pipeline to get unique LabPanelName values
+CDIFFs <-  df_lab %>% 
+  dplyr::filter(str_detect(LabPanelName, regex("C[^/]DIFF", ignore_case = TRUE)) |
+                    str_detect(LabPanelName, regex("CDIFF", ignore_case = TRUE)) ) %>%
+  dplyr::distinct(LabPanelName) %>% # Get unique rows based on LabPanelName
+  dplyr::pull(LabPanelName)         # Extract LabPanelName as a character vector
+
+# Post respiratory_comb lab
+
+name1 <- "RESPIRATORY CULTURE"
+
+name2 <- "RESPIRATORY CULTURE"
+
+RESPIRATORY_CULTURE_list <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName) 
+
+# post BLOOD_GASES_comb lab
+
+# 1) Any “blood gas” or “blood gases”
+name1 <- "\\bBLOOD\\s+GAS(?:ES)?\\b"
+
+# 2) The GEM platform variant explicitly
+name2 <- "\\(GEM\\)\\s*BLOOD\\s+GASES?"
+
+exclude_term <- "\\bCORD\\b"
+
+BLOOD_GASES_comb_list <- df_lab %>%
+  filter(
+    # Original conditions for detecting blood gas panels
+    (
+      str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) |
+        str_detect(LabPanelName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+      # New condition: LabPanelName should NOT contain the exclude_term_cord
+      !str_detect(LabPanelName, regex(exclude_term, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# red_blood_cell_or_whole_blood_transfusion
+
+# catches “BLOOD TRANSFUSION” OR “PACKED CELL” OR “RED BLOOD CELLS”
+name1 <- "\\b(?:BLOOD\\s+TRANSFUSION|PACKED\\s+CELL|RED\\s+BLOOD\\s+CELLS?)\\b"
+
+# catches the standalone “RBC UNIT”
+name2 <- "\\bRBC\\s*UNIT\\b"
+
+# TODO: no "products of conception"
+exclude_pattern <- "\\bPRODUCT(?:S)?\\s+OF\\s+CONCEPTION\\b"
+
+red_blood_cell_or_whole_blood_transfusion_list <- df_proc %>%
+  filter(
+    # Original conditions for detecting relevant procedures
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+      # New condition: ProcedureName should NOT contain the exclude_term_poc
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# intubation
+
+# 1) any INSERT/INSERTION of an endotracheal tube or airway
+name1 <- "\\bINSERT(?:ION)?\\b.*\\bENDOTRACHEAL\\b"
+
+# name1 <- "Endotracheal"
+
+# 2) any CHANGE of an endotracheal airway
+name2 <- "\\bCHANGE\\b.*\\bENDOTRACHEAL\\b"
+
+
+intubation_list <- df_proc %>%
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+
+# Blood.products
+
+# 1) Matches "PLATELET UNIT" or "PLATELETS UNIT"
+name1 <- "\\bPLATELET(?:S)?\\s+UNIT\\b"
+
+# 2) Matches "PREPARE PLATELET FOR TRANSFUSION" or "PREPARE PLATELETS FOR TRANSFUSION"
+name2 <- "\\bPREPARE\\s+PLATELET(?:S)?\\s+FOR\\s+TRANSFUSION\\b"
+
+# TODO: only keep "PLATELETS UNIT" and "PREPARE PLATELETS FOR TRANSFUSION" 
+
+Blood_products_list <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# echo
+
+# 1) Any echo exam (TTE, TEE, Doppler, contrast, etc.)
+name1 <- "\\bECHO\\b"
+
+# 2) Stress echo protocols (exercise or dobutamine)
+name2 <- "\\b(?:STRESS\\s+ECHO|DOBUTAMINE\\s+STRESS\\s+ECHO)\\b"
+
+# TODO, no " PERICARDIOCENTESIS", no "PEDIATRIC", no "intracardiac"
+# TODO, no " fetal ", no " anes " (Anesthesia), no " amb "
+# TODO, no "TEE GUID", no "pelvic", no "TRANSRECTAL"
+# TODO, no "scrotum"
+exclusion_regex_parts <- c(
+  "\\bPERICARDIOCENTESIS\\b",
+  "\\bPEDIATRIC\\b",
+  "\\BINTRACARDIAC\\b",
+  "\\bFETAL\\b",           # Handles " fetal " by matching the whole word
+  "\\bANES\\b",            # Handles " anes "; using \b for whole word/abbreviation
+  "\\bAMB\\b",             # Handles " amb "; using \b for whole word/abbreviation
+  "\\bTEE\\s+GUID\\b",     # Specific phrase "TEE GUID"
+  "\\bPELVIC\\b",
+  "\\bTRANSRECTAL\\b",
+  "\\bSCROTUM\\b"
+)
+
+# Combine exclusion terms into a single regex pattern
+exclude_pattern <- paste(exclusion_regex_parts, collapse = "|")
+
+ECHO_list <- df_proc %>%
+  filter(
+    # Initial condition: ProcedureName must match name1 OR name2
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator
+      # Exclusion condition: ProcedureName must NOT match any of the exclude_pattern terms
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# PR PARTIAL HIP REPLACEMENT, PARTIAL HIP REPLACEMENT
+
+# troponin
+
+# 1) Generic troponin measurement
+name1 <- "\\bTROPONIN\\b"
+
+# 2) Platform or assay qualifiers before “troponin”
+name2 <- "\\b(?:ISTAT|POCT|ASSAY)\\b.*\\bTROPONIN\\b"
+
+# TODO: this is good 
+
+Troponin_list <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# Social.planning
+
+# 1) any consult to discharge planning
+name1 <- "\\bCONSULT\\b.*\\bDISCHARGE\\s+PLANNING\\b"
+
+# 2) any consult to social work
+name2 <- "\\bCONSULT\\b.*\\bSOCIAL\\s+WORK\\b"
+
+# Define the regex for the term to be excluded
+exclude_term <- "\\bDISCHARGE\\b"
+
+Social_planning_list <- df_proc %>%
+  filter(
+    # Initial condition: ProcedureName must match name1 OR name2
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator
+      # Exclusion condition: ProcedureName must NOT match the exclude_term_discharge
+      !str_detect(ProcedureName, regex(exclude_term, ignore_case = TRUE))
+  )  %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# Discharge.planning
+
+# 1) any OT or PT eval & treatment
+name1 <- "\\b(?:OT|PT)\\s+EVAL(?:\\s+AND\\s+TREAT)?\\b"
+
+# 2) any oxygen evaluation
+name2 <- "\\bOXYGEN\\s+EVALUATION\\b"
+
+# TODO: add, "DISCHARGE PLANNING"
+# 3) any discharge planning
+name3 <- "\\bDISCHARGE\\s+PLANNING\\b"
+
+# TODO: no "wound"
+# Define the regex for the term to be excluded
+exclude_term <- "\\bWOUND\\b"
+
+Discharge_planning_list <- df_proc %>%
+  filter(
+    # Inclusion criteria: (name1 OR name2 OR name3_discharge_planning)
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name3, ignore_case = TRUE))
+    ) & # AND operator for combining inclusion and exclusion
+      # Exclusion criterion: ProcedureName must NOT match the exclude_term_wound
+      !str_detect(ProcedureName, regex(exclude_term, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# XRAY
+
+# 1) generic blood transfusion
+name1 <- "XR(?:ay) CHEST SINGLE"
+
+# 2) red‐cell or packed‐cell transfusion
+name2 <- "CHEST SINGLE"
+
+# TODO: this is good 
+
+XRAY_list <- df_proc %>%
+  filter(
+    str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+      str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+  )  %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# POINT.OF.CARE
+
+# 1) any POC blood gas
+name1 <- "\\bPOC\\b"
+
+# 2) any “point of care” test
+name2 <- "\\bPOINT\\s+OF\\s+CARE(?:\\s+TESTS?)?\\b"
+
+# TODO, no "extraction", no "guidance", no "AMB STREP", no "VENOUS ACCESS", no "ARTERIAL ACCESS"
+
+exclusion_regex_list <- c(
+  "\\bEXTRACTION\\b",
+  "\\bGUIDANCE\\b",
+  "\\bAMB\\s+STREP\\b",
+  "\\bVENOUS\\s+ACCESS\\b",
+  "\\bARTERIAL\\s+ACCESS\\b"
+)
+
+# Combine exclusion terms into a single regex pattern using OR (|)
+exclude_pattern <- paste(exclusion_regex_list, collapse = "|")
+
+POINT_OF_CARE_list <- df_proc %>%
+  filter(
+    # Initial inclusion criteria: (name1 OR name2)
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: the following condition must also be true
+      # Exclusion criteria: ProcedureName must NOT contain any of the excluded terms
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# URINE
+
+# 1) any random‐urine test
+name1 <- "\\bRANDOM\\s+URINE\\b"
+
+# 2) any of the specific analyte panels in urine
+name2 <- "\\b(?:ELECTROLYTES|SODIUM|UREA)\\s+RANDOM\\s+URINE\\b"
+
+URINE_list <- df_lab %>% 
+  filter(str_detect(LabPanelName, regex(name1, ignore_case = TRUE)) 
+         | str_detect(LabPanelName, regex(name2, ignore_case = TRUE)) 
+  ) %>%
+  dplyr::distinct(LabPanelName) %>%
+  dplyr::pull(LabPanelName)
+
+# dialysis
+
+# 1) generic “dialysis” (catches DIALYSIS, DIALYSIS SOLUTIONS, PR DIALYSIS PROCEDURE, etc.)
+name1 <- "\\bDIALYSIS\\b"
+
+# 2) modality‑specific (hemodialysis or peritoneal dialysis)
+name2 <- "\\b(?:HEMO|PERITONEAL).*?DIALYSIS\\b"
+
+# TODO: must include, "PERITONEAL" or "insertion" or "acute" or "phys" or "PR DIALYSIS PROCEDURE" or "HEMOSTATS" or "REPEATED" or "PR UNSCHED DIALYSIS ESRD PT HOS "
+
+# must also include one of these keywords
+must_include <- "\\b(?:PERITONEAL|INSERTION|ACUTE|PHYS|PR\\s+DIALYSIS\\s+PROCEDURE|HEMOSTATS|REPEATED|PR\\s+UNSCHED\\s+DIALYSIS\\s+ESRD\\s+PT\\s+HOS)\\b"
+
+Dialysis_list <- df_proc %>%
+  filter(
+    ( str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE)) )
+    &
+      str_detect(ProcedureName, regex(must_include, ignore_case = TRUE))
+    &
+      !str_detect(ProcedureName, regex("removal", ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+# bloodtrans
+
+# catches “BLOOD TRANSFUSION” OR “PACKED CELL” OR “RED BLOOD CELLS”
+name1 <- "\\b(?:BLOOD\\s+TRANSFUSION|PACKED\\s+CELL|RED\\s+BLOOD\\s+CELLS?)\\b"
+
+# catches the standalone “RBC UNIT”
+name2 <- "\\bRBC\\s*UNIT\\b"
+
+exclude_pattern <- "\\bPRODUCT(?:S)?\\s+OF\\s+CONCEPTION\\b"
+
+Bloodtrans_list <- df_proc %>%
+  filter(
+    # Original conditions for detecting relevant procedures
+    (
+      str_detect(ProcedureName, regex(name1, ignore_case = TRUE)) |
+        str_detect(ProcedureName, regex(name2, ignore_case = TRUE))
+    ) & # AND operator: both the above OR condition AND the below NOT condition must be true
+      # New condition: ProcedureName should NOT contain the exclude_term_poc
+      !str_detect(ProcedureName, regex(exclude_pattern, ignore_case = TRUE))
+  ) %>%
+  dplyr::distinct(ProcedureName) %>% 
+  dplyr::pull(ProcedureName)
+
+matched_lists_names <- c("CT_BODY_CHEST_PELV_W_ABD_list", "STRESS_NUCLEAR_list", "POTASSIUM_list", "CENTRAL_line_list",
+                           "CDIFFs", "RESPIRATORY_CULTURE_list", "BLOOD_GASES_comb_list",
+                           "red_blood_cell_or_whole_blood_transfusion_list", "intubation_list",
+                           "Blood_products_list", "ECHO_list", "Troponin_list", "Social_planning_list",
+                           "Discharge_planning_list", "XRAY_list", "POINT_OF_CARE_list", "URINE_list",
+                           "Dialysis_list", "Bloodtrans_list")
+
+matched_lists <- mget(matched_lists_names) 
+saveRDS(matched_lists, file = paste0(fp_processed, "reg_matched_lists.rds"))
 
 ###########################################################################
 # TODO: the following code is to get Post-op: final_data_store_diag_postop.csv
@@ -13,6 +526,12 @@ library(fastDummies)
 # Diag <- read.csv(file = "data/C2730_Table4_Diagnosis_20240223.csv")
 # #Diag$DiagnosisDate_ad <- as.Date(Diag$DiagnosisDate)
 # Epic_data <- ICD10_uni_surg_id_spec
+
+# Epic_data <- Epic_data %>%
+#   mutate(arb_person_id = as.integer64(arb_person_id))
+
+Epic_data_r <- Epic_data_r %>%
+  mutate(arb_person_id = as.integer64(arb_person_id))
 
 diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data_r$arb_person_id,]
 
@@ -28,6 +547,7 @@ need_merge <- make_dummyvf[(make_dummyvf$phecode %in% c(80,1011,501,590,591,1013
                                                         342,394.7,411.2,411.8,427.12,427.5,429,797,994.21,285,740.1,743.11,800,
                                                         38,480,501,276.13,442,559,585.1,415.11,452,452.2,80,850,851,591,599.3) | 
                               substring(make_dummyvf$phecode,1,3) %in% c(599,592,540,994,480)),]
+
 # inter_Epic <- intersect(unique(Epic_data$arb_person_id),unique(need_merge$arb_person_id))
 nsqip_diag_merge <-  full_join(need_merge, Epic_data_r, by = c("arb_person_id"))
 
@@ -75,7 +595,7 @@ diag_cohort <- Diag[Diag$arb_person_id %in% Epic_data_r$arb_person_id,]
 
 need_merge <- diag_cohort%>%select(arb_person_id,DiagnosisDate,DiagnosisCodeType,DiagnosisCode)
 #### indicator for diag ####
-nsqip_diag_merge <-  full_join(need_merge, Epic_data1, by = "arb_person_id")
+nsqip_diag_merge <-  full_join(need_merge, Epic_data_r, by = "arb_person_id")
 
 #save(nsqip_diag_merge,file = "/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/combid_pre/combid_merge_data.Rdata")
 #nsqip_diag_merge$as_date_diag <- as.Date(as.character(nsqip_diag_merge$DiagnosisDate))
@@ -291,32 +811,21 @@ rm(final_data_store, Diag, final_data, make_dummy, make_dummyvf,
    dummydf1)
 
 #########################################################################
-# TODO: this is to get final_data_store_lab_postop
+# this is to get final_data_store_lab_postop
 
-# lab_positive <- Lab
-# lab_positive$LabResult[lab_positive$LabResult==""] <- "unknown"
-# lab_positive$LabResult[is.na(lab_positive$LabResult)] <- "unknown"
-# 
-# lab_positive$ind_positive[substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE] <- 0
-# lab_positive$ind_positive[!(substring(lab_positive$LabResult,1,3)=="No " | substring(lab_positive$LabResult,1,3)=="NO " | grepl("Negative", lab_positive$LabResult, ignore.case = T)==TRUE)] <- 1
-# lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
-# 
-# 
-# lab <- lab_positive2[,-ncol(lab_positive2)]
-
-# TODO: GET THE DATA file cultureAllInfections.csv
+#  GET THE DATA file cultureAllInfections.csv
 cultures <- read.csv(file = "../data/cultureAllInfections.csv")
 # View(cultures)
 store_cult_names <- as.factor(cultures$LabPanelName)
-# TODO: may change from lab <- lab_positive2[,-ncol(lab_positive2)] to lab <- read.csv
+
 lab_cohort_r <- Lab_r[Lab_r$arb_person_id %in% Epic_data_r$arb_person_id,]
 
 # TODO: include more urine culture here 
-lab_cdiff <- Lab %>% dplyr::select(LabPanelName) %>%
-  filter(str_detect(LabPanelName, regex("C[^/]DIFF", ignore_case = TRUE)) |
-           str_detect(LabPanelName, regex("CDIFF", ignore_case = TRUE)) )
-
-CDIFFs <- table(lab_cdiff) %>% names()
+# lab_cdiff <- Lab %>% dplyr::select(LabPanelName) %>%
+#   filter(str_detect(LabPanelName, regex("C[^/]DIFF", ignore_case = TRUE)) |
+#            str_detect(LabPanelName, regex("CDIFF", ignore_case = TRUE)) )
+# 
+# CDIFFs <- table(lab_cdiff) %>% names()
 
 # lab_cohort <- lab_cohort[(lab_cohort$LabPanelName %in% c("AEROBIC CULTURE (EG: TISSUE, ABSCESS, WOUND, SINUS, ETC","URINE CULTURE - RWHS","AFB BLOOD CULTURE - SOUTH","SCREEN, YEAST SCREENING CULTURE",
 #                                                          "AEROBIC CULTURE - MHS ONLY","ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)","ANAEROBIC CULTURE","CHLAMYDIA CULTURE - MHS ONLY",
@@ -370,7 +879,12 @@ lab_cohort <- lab_cohort_r[(lab_cohort_r$LabPanelName %in% c("(GEM) BLOOD GASES 
                                                              "LAB USE ONLY - URINE CULTURE, ROUTINE", "LAB USE ONLY - URINE CULTURE RT 997870", 
                                                              "LAB USE ONLY - URINE CULTURE, PRENATAL, W/GBS RESULT")) | 
                              (lab_cohort_r$LabPanelName %in% as.factor(cultures$LabPanelName))|
-                             (lab_cohort_r$LabPanelName %in% CDIFFs),]
+                             (lab_cohort_r$LabPanelName %in% CDIFFs)|
+                             (lab_cohort_r$LabPanelName %in% RESPIRATORY_CULTURE_list)|
+                             (lab_cohort_r$LabPanelName %in% BLOOD_GASES_comb_list)|
+                             (lab_cohort_r$LabPanelName %in% Blood_products_list)|
+                             (lab_cohort_r$LabPanelName %in% Troponin_list)|
+                             (lab_cohort_r$LabPanelName %in% URINE_list),]
 
 
 
@@ -427,7 +941,9 @@ lab_cohort <- lab_cohort_r[(lab_cohort_r$LabPanelName %in% c("AEROBIC CULTURE (E
                     "CULTURE ANAEROBIC","BLOOD CULTURE POSITIVE WORKUP - RWHS","BLOOD CULTURE POS WORKUP HIGH#","CULTURE BLOOD, LAB COLL 1","ANAEROBIC CULTURE - RWHS",
                     "ANTIBODY PATIENT INTERPS 1-5","POTASSIUM SERUM/PLASMA","PR ASSAY OF SERUM POTASSIUM","I STAT POTASSIUM",
                     "POCT POTASSIUM","POTASSIUM WHOLE BLOOD",
-                    "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),]
+                    "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", 
+                    "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)"))|
+                    (lab_cohort_r$LabPanelName %in% POTASSIUM_list),]
 
 
 #a <- unique(lab_cohort$LabPanelName)
@@ -488,6 +1004,8 @@ medi_cohort_r <- Medi_r[Medi_r$arb_person_id %in% Epic_data_r$arb_person_id,]
 
 medi_cohort <- medi_cohort_r[medi_cohort_r$TherapeuticClass=="ANTIBIOTICS",]
 
+# dim(medi_cohort)
+
 nsqip_medi_merge <- full_join(medi_cohort,Epic_data_r,by = "arb_person_id")
 
 ### Validation ###
@@ -504,11 +1022,14 @@ nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
 nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
 #View(nsqip_medi_merge[,c("as_date_operation","as_date_med","length_med_operation")])
 
+# range(nsqip_medi_merge$length_med_operation, na.rm = TRUE)
 
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation < -30 ] <- 0
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation <= -2 & nsqip_medi_merge$length_med_operation >= -30 ] <- 1
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation > -2 ] <- 2
 nsqip_medi_merge$ind_operative_rec[is.na(nsqip_medi_merge$length_med_operation)] <- NA
+
+# table(nsqip_medi_merge$ind_operative_rec, useNA = "ifany")
 
 make_dummy <- nsqip_medi_merge[nsqip_medi_merge$ind_operative_rec==1 & !is.na(nsqip_medi_merge$ind_operative_rec),]
 make_dummy$AntiBiotics_YN <- 1
@@ -533,26 +1054,30 @@ rm(final_data)
 
 ###############################################################################
 ## TODO: final_data_store_medi_postop_other_comp
-
 medi_cohort <- medi_cohort_r[medi_cohort_r$PharmaceuticalClass %in% c("CALCIUM REPLACEMENT","PLASMA EXPANDERS","ADRENERGIC AGENTS,CATECHOLAMINES","ANTICOAGULANTS,COUMARIN TYPE","ANTIDIURETIC AND VASOPRESSOR HORMONES","ANTIEMETIC/ANTIVERTIGO AGENTS","BETA-ADRENERGIC AGENTS","BICARBONATE PRODUCING/CONTAINING AGENTS","ERYTHROPOIESIS-STIMULATING AGENTS",
                                 "EXPECTORANTS","FOLIC ACID PREPARATIONS","GENERAL ANESTHETICS,INJECTABLE-BENZODIAZEPINE TYPE","GLUCOCORTICOIDS","HEPARIN AND RELATED PREPARATIONS","IRON REPLACEMENT","LAXATIVES, LOCAL/RECTAL",
                                 "LOOP DIURETICS","NSAIDS, CYCLOOXYGENASE INHIBITOR - TYPE ANALGESICS","TOPICAL ANTIFUNGALS","ABSORBABLE SULFONAMIDE ANTIBACTERIAL AGENTS","NITROFURAN DERIVATIVES ANTIBACTERIAL AGENTS","PENICILLIN ANTIBIOTICS","QUINOLONE ANTIBIOTICS","DIALYSIS SOLUTIONS","POC(EPOC) ABG","POINT OF CARE TESTS",
                                 "POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE",
                                 "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM"),]
 
-nsqip_medi_merge <- full_join(medi_cohort,Epic_data,by = "arb_person_id")
+nsqip_medi_merge <- full_join(medi_cohort, Epic_data_r, by = "arb_person_id")
 
 nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDate)
 nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
 
 nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
 
+# range(nsqip_medi_merge$length_med_operation, na.rm = TRUE)
+
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation < -30 ] <- 0
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation <= 0 & nsqip_medi_merge$length_med_operation >= -30 ] <- 1
 nsqip_medi_merge$ind_operative_rec[nsqip_medi_merge$length_med_operation > 0 ] <- 2
 nsqip_medi_merge$ind_operative_rec[is.na(nsqip_medi_merge$length_med_operation)] <- NA
 
+# table(nsqip_medi_merge$ind_operative_rec, useNA = "ifany")
+
 make_dummy <- nsqip_medi_merge[nsqip_medi_merge$ind_operative_rec==1 & !is.na(nsqip_medi_merge$ind_operative_rec),]
+# dim(make_dummy)
 # saveRDS(make_dummy, "data/make_dummy_med.rds")
 transpose_icd10 <- make_dummy%>%
   select(SurgeryID, PharmaceuticalClass)%>%
@@ -575,6 +1100,7 @@ saveRDS(final_data, paste0(fp_processed,
 
 #medi_cohort <- Medi[Medi$arb_person_id %in% Epic_data$arb_person_id,]
 #medi_cohort <- medi_cohort_r[(medi_cohort_r$PharmaceuticalClass=="URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT"),]
+# dim(medi_cohort)
 medi_cohort <- medi_cohort_r[(medi_cohort_r$PharmaceuticalClass%in%c("URINARY TRACT ANTISPASMODIC/ANTIINCONTINENCE AGENT",
                                                                      "ANTI-OBESITY - ANOREXIC AGENTS",
                                                                      "ANTIHYPERTENSIVES, ACE INHIBITORS",
@@ -583,7 +1109,7 @@ medi_cohort <- medi_cohort_r[(medi_cohort_r$PharmaceuticalClass%in%c("URINARY TR
                                                                      "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", 
                                                                      "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),]
 
-nsqip_medi_merge <- full_join(medi_cohort,Epic_data,by = "arb_person_id")
+nsqip_medi_merge <- full_join(medi_cohort, Epic_data_r, by = "arb_person_id")
 
 nsqip_medi_merge$as_date_med <- as.Date(nsqip_medi_merge$OrderedDate)
 nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDate)
@@ -591,11 +1117,13 @@ nsqip_medi_merge$SurgeryDate_asDate <- as.Date(nsqip_medi_merge$SurgeryDate_asDa
 nsqip_medi_merge$length_med_operation <- nsqip_medi_merge$SurgeryDate_asDate-nsqip_medi_merge$as_date_med
 #View(nsqip_medi_merge[,c("as_date_operation","as_date_med","length_med_operation")])
 
+# range(nsqip_medi_merge$length_med_operation, na.rm = TRUE)
 
 nsqip_medi_merge$pre_op_med <- ifelse(nsqip_medi_merge$length_med_operation > 0 & nsqip_medi_merge$length_med_operation <= 365,1,0)
 
-
-make_dummy <- nsqip_medi_merge[nsqip_medi_merge$pre_op_proc==1 & !is.na(nsqip_medi_merge$pre_op_proc),]
+# sum(nsqip_medi_merge$pre_op_med == 1, na.rm = TRUE)
+make_dummy <- nsqip_medi_merge[nsqip_medi_merge$pre_op_med==1 & !is.na(nsqip_medi_merge$pre_op_med),]
+# dim(make_dummy)
 #make_dummy <- include_pat[include_pat$ind_operative_rec==1 & !is.na(include_pat$ind_operative_rec),]
 
 transpose_icd10 <- make_dummy%>%
@@ -648,14 +1176,25 @@ proc_cohort <- proc_cohort_r[(proc_cohort_r$ProcedureName %in% c("CARD DX ECHO C
                                                                  "AMBULATORY REFERRAL OIC BLOOD AND/OR BLOOD PRODUCT TRANSFUSION","NURSE INSTRUCTIONS TRANSFUSION REACTION OIC","BLOOD TRANSFUSION: USE ORDER SET ONLY. IF EMERGENT, CALL BLOOD BANK.",
                                                                  "MASSIVE TRANSFUSION PROTOCOL","PR CHG TRANSFUSION PROCEDURE","PR EXCHANGE TRANSFUSION, OTHR","TRANSFUSE RED BLOOD CELLS","TRANSFUSE CRYOPRECIPITATE",
                                                                  "TRANSFUSE PLATELETS","TRANSFUSE WHOLE BLOOD","TRANSFUSE RED BLOOD CELLS (IN ML)","TRANSFUSE PLASMA (IN ML)","TRANSFUSE CRYOPRECIPITATE (IN ML)",
-                                                                 "Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach","PARTIAL HIP REPLACEMENT",
+                                                                 "Transfusion of Nonautologous Red Blood Cells into Peripheral Vein, Percutaneous Approach","PARTIAL HIP REPLACEMENT", "PR PARTIAL HIP REPLACEMENT", 
                                                                  "PREPARE PLATELETS FOR TRANSFUSION", 
                                                                  "RBC UNIT",
                                                                  "POC(EPOC) ABG","POINT OF CARE TESTS",
                                                                  "POCT GLUCOSE CPT 82962 INTERFACED RESULT/DOCKED DEVICE",
-                                                                 "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM")),] # problem
+                                                                 "RENAL FUNCTION PANEL","VANCOMYCIN RANDOM"))|
+                               (proc_cohort_r$ProcedureName %in% red_blood_cell_or_whole_blood_transfusion_list)|
+                               (proc_cohort_r$ProcedureName %in% intubation_list)|
+                               (proc_cohort_r$ProcedureName %in% ECHO_list)|
+                               (proc_cohort_r$ProcedureName %in% Social_planning_list)|
+                               (proc_cohort_r$ProcedureName %in% Discharge_planning_list)|
+                               (proc_cohort_r$ProcedureName %in% XRAY_list)|
+                               (proc_cohort_r$ProcedureName %in% POINT_OF_CARE_list)|
+                               (proc_cohort_r$ProcedureName %in% Dialysis_list)|
+                               (proc_cohort_r$ProcedureName %in% Bloodtrans_list),] 
+
+
 #proc_cohort[proc_cohort$ProcedureName == "ED BLOOD TRANSFUSION PROCEDURE",]
-nsqip_proc_merge <- full_join(proc_cohort,Epic_data,by = "arb_person_id")
+nsqip_proc_merge <- full_join(proc_cohort, Epic_data_r, by = "arb_person_id")
 
 nsqip_proc_merge$ProcedureEventDate[nsqip_proc_merge$ProcedureEventDate==""] <- NA
 nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureEventDate)
@@ -710,9 +1249,15 @@ proc_cohort <- proc_cohort_r[(proc_cohort_r$ProcedureName %in% c("OS CT BODY COM
                                                                  "XR LUMBAR SPINE 2 VIEWS (LAT BENDING ONLY)","XR LUMBAR SPINE 3 VIEWS (AP,LAT,SPOT)","XR LUMBAR SPINE 4 VIEW (AP,LAT,FLEX,EXT)","XR LUMBAR SPINE 5 VIEW (AP,LAT,OBLS,SPOT)",
                                                                  "XR LUMBAR SPINE 6 VIEW (AP,LAT,OBLS,FLEX,EXT)","PR ASSAY OF SERUM POTASSIUM","CENTRAL LINE","CENTRAL LINE INSERTION","PR NONINVASV EXTREM EXAM,MULT,BILAT",
                                                                  "PR SPCL STN 2 I&R EXCPT MICROORG/ENZYME/IMCYT&IMHIS","CLOS LARGE BOWEL BIOPSY","PR LORAZEPAM INJECTION 2 MG","UPDATE PATIENT CLASS I.E. INPATIENT / OBSERVATION",
-                                                                 "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)")),] # problem
-#proc_cohort[proc_cohort$ProcedureName == "OS CT BODY COMPARE-NO READ",]
-nsqip_proc_merge <- full_join(proc_cohort,Epic_data,by = "arb_person_id")
+                                                                 "ANTI-OBESITY - ANOREXIC AGENTS", "ANTIHYPERTENSIVES, ACE INHIBITORS", "FOLIC ACID PREPARATIONS", 
+                                                                 "NOSE PREPARATIONS, VASOCONSTRICTORS(OTC)"))|
+                               (proc_cohort_r$ProcedureName %in% CT_BODY_CHEST_PELV_W_ABD_list)|
+                               (proc_cohort_r$ProcedureName %in% STRESS_NUCLEAR_list)|
+                               (proc_cohort_r$ProcedureName %in% CENTRAL_line_list),] 
+
+
+
+nsqip_proc_merge <- full_join(proc_cohort, Epic_data_r, by = "arb_person_id")
 nsqip_proc_merge$ProcedureEventDate[nsqip_proc_merge$ProcedureEventDate==""] <- NA
 nsqip_proc_merge$as_date_proc <- as.Date(nsqip_proc_merge$ProcedureEventDate)
 nsqip_proc_merge$SurgeryDate_asDate <- as.Date(nsqip_proc_merge$SurgeryDate_asDate)
@@ -881,8 +1426,8 @@ rm(dummydf1_selectv2, dummydf1_select)
 ######################################################################
 ## TODO: pre_op_gender
 # patient <- read.csv(file = "data/C2730_Table1_Person_20240223.csv")
-
-mrn%<>%rename(patient_mrn = Mrn)
+# TODO: named as patient_mrn (SURPAS)
+mrn%<>% dplyr::rename(patient_mrn = Mrn)
 patient %<>% left_join(mrn, by = "arb_person_id")
 patient$Epic_DOD <- ifelse(patient$Epic_DOD == "", NA, patient$Epic_DOD)
 patient$CDPHE_DOD <- ifelse(patient$CDPHE_DOD == "", NA, patient$CDPHE_DOD)
@@ -892,7 +1437,7 @@ patient$Sex <- ifelse(patient$Sex %in% c("Unknown", "X"), NA, patient$Sex)
 patient_cohort <- patient[patient$arb_person_id %in% Epic_data$arb_person_id,c("arb_person_id","Sex", "Race", "Ethnicity", "Dob", "Date_of_Death","patient_mrn")]
 patient_cohort_uni <- patient_cohort[!duplicated(patient_cohort[ , c("arb_person_id", "patient_mrn")]),]
 
-df_merge_gender <- left_join(Epic_data[,c("arb_person_id","SurgeryID")],
+df_merge_gender <- left_join(Epic_data_r[,c("arb_person_id","SurgeryID")],
                              patient_cohort_uni,by=c("arb_person_id"))
 
 df_storee <- dummy_cols(df_merge_gender, select_columns ="Sex")
@@ -902,422 +1447,5 @@ saveRDS(df_storee, paste0(fp_processed,
 #write.csv(df_storee,file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/preop_lab/pre_op_gender.csv")
 rm(patient, patient_cohort, patient_cohort_uni)
 
-##############################################################################
-## TODO: prepare analytical_preopv2
-## TODO: preop_expected_rate_20221005
-# diag_pred <- final_data_store_diag_preop
-# 
-# lab_pred <- final_data_store_preop_lab
-# 
-# #medi_pred <- read.csv(file="/Users/yaxuzhuang/OneDrive - The University of Colorado Denver/Katie Project/2022_0711/medi_postop/final_data_store_medi_preop.csv",check.names=FALSE)
-# proc_pred_preop <- final_data_store_proc_preop_0922
-# # table(proc_pred_preop$`OS CT BODY COMPARE-NO READ`)
-# 
-# # colnames(proc_pred_preop)
-# 
-# # clean_surg_preop_pred1006
-# 
-# surg_pred_preop <- clean_surg_preop_pred1006
-# 
-# # table(surg_pred_preop$`OS CT BODY COMPARE-NO READ`)
-# 
-# gender_preop <- pre_op_gender
-# 
-# 
-# # diag_pred <- diag_pred[,-1]
-# # lab_pred <- lab_pred[,-1]
-# # #medi_pred <- medi_pred[,-1]
-# # proc_pred_preop <- proc_pred_preop[,-1]
-# # surg_pred_preop <- surg_pred_preop[,-1]
-# # gender_preop <- gender_preop[,-1]
-# 
-# 
-# # SSI_coef_preop <- as.data.frame(read.csv(file = "data/preop/SSI_coef_20220906.csv",check.names=FALSE))
-# # UTI_coef_preop <- as.data.frame(read.csv(file = "data/preop/UTI_coef_2022_0906.csv",check.names=FALSE))
-# # SYSEP_coef_preop <- as.data.frame(read.csv(file = "data/preop/SYSEP_coef_20220906_est.csv",check.names=FALSE))
-# # PNEU_coef_preop <- as.data.frame(read.csv(file = "data/preop/PNEU_coef_20220906.csv",check.names=FALSE))
-# 
-# #load("/Users/yaxuzhuang/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Katie Project/2022_0711/combid_pre/com_score_preop.rdata")
-# 
-# 
-# #Epic_data_sub <- Epic_data[,c("arb_person_id","PrimarySurgeonSpecialty","SurgeryDate_asDate","SurgeryID","PrimarySurgeonName")]
-# 
-# # colnames(diag_pred)[284:288]
-# n <- which(colnames(diag_pred) == "80")
-# 
-# diag_pred_clean <- diag_pred[,c(which(colnames(diag_pred)=="SurgeryID"), 
-#                                 n:ncol(diag_pred))]
-# 
-# # table(diag_pred_clean$`OS CT BODY COMPARE-NO READ`)
-# 
-# # %>%rename(`80` = phecode_80) # problem with 80
-# 
-# analytical_preop <- merge(surg_pred_preop,diag_pred_clean,by="SurgeryID")
-# 
-# # colnames(lab_pred)[287:ncol(lab_pred)]
-# 
-# n <- grep("^ANAEROBIC CULTURE,", colnames(lab_pred))[1]
-# 
-# # TODO: ncol(lab_pred)-4 to remove ] "arb_encounter_id"   "EpicCptCode"                                                
-# # [9] "OmopCptCode"     "OmopHcpcsCode"
-# 
-# lab_pred_clean <- lab_pred[,c(which(colnames(lab_pred)=="SurgeryID"),
-#                               n:(ncol(lab_pred)-4))]
-# 
-# analytical_preopdf2 <- merge(analytical_preop,lab_pred_clean,by="SurgeryID")
-# 
-# 
-# #all.equal(analytical_preopdf2$arb_person_id.x,analytical_preopdf2$arb_person_id)
-# 
-# # colnames(proc_pred_preop)[294: 299]
-# 
-# proc_pred_preop_clean <- proc_pred_preop[,
-#                       c(which(colnames(proc_pred_preop)=="SurgeryID"),
-#                 which(colnames(proc_pred_preop)=="OS CT BODY COMPARE-NO READ"))]
-# 
-# # glimpse(proc_pred_preop_clean)
-# # colnames(proc_pred_preop)[290:300]
-# 
-# # TODO: FIX BUG
-# # table(analytical_preopdf2$`OS CT BODY COMPARE-NO READ`)
-# # glimpse(analytical_preopdf2)
-# # table(proc_pred_preop_clean$`OS CT BODY COMPARE-NO READ`)
-# # glimpse(proc_pred_preop_clean)
-# 
-# #analytical_preopdf3 <- merge(analytical_preopdf2,medi_pred,by="arb_person_id")
-# analytical_preopdf4 <- merge(analytical_preopdf2,proc_pred_preop_clean,by="SurgeryID")
-# 
-# # colnames(gender_preop)[3:8]
-# 
-# gender_preop_clean <- gender_preop[,c(which(colnames(gender_preop)=="SurgeryID"),
-#                                       which(colnames(gender_preop)=="Sex_Male"))]
-# #analytical_preopdf5 <- merge(analytical_preopdf4,surg_pred_preop,by="arb_person_id")
-# analytical_preopdf6 <- merge(analytical_preopdf4,gender_preop_clean,by="SurgeryID")
-# 
-# com_score_preop_clean <- com_score_preop[,c(which(colnames(com_score_preop)=="SurgeryID"),ncol(com_score_preop))]
-# 
-# analytical_preopdf7 <- merge(analytical_preopdf6,com_score_preop_clean,by="SurgeryID")
-# 
-# analytical_preopv2 <- analytical_preopdf7
-# 
-# analytical_preopv2$comb_560 <- ifelse(rowSums(
-#   analytical_preopv2[,which(substring(colnames(analytical_preopv2),1,3)==560)])>=1,1,0)
-# 
-# # colnames(analytical_preopv2)[295:297]
-# 
-# # colnames(analytical_preopv2)[which(colnames(analytical_preopv2) 
-# # == "80"): ncol(analytical_preopv2)]
-# 
-# cultures_to_combine <- grep("CULTURE", 
-#      colnames(analytical_preopv2)[which(colnames(analytical_preopv2) 
-#                              == "80"): ncol(analytical_preopv2)],
-#      value = TRUE)
-# 
-# message(cultures_to_combine)
-# 
-# # analytical_preopv2$blood_cult_comb <- ifelse(rowSums(analytical_preopv2[,c(296:306)])>=1,1,0)
-# analytical_preopv2$blood_cult_comb <- ifelse(rowSums(analytical_preopv2[,
-#                                                cultures_to_combine])>=1,1,0)
-# analytical_preopv2$WoundClass <- ifelse(
-#   is.na(analytical_preopv2$WoundClass), NA,
-#   paste0(analytical_preopv2$WoundClass, " ")
-# )
-# 
-# 
-# # typeof(analytical_preopv2)
-# # glimpse(analytical_preopv2)
-# # table(analytical_preopv2$WoundClass, useNA = "ifany")
-# # table(analytical_preopv2$SurgeryInpatientOrOutpatient, useNA = "ifany")
-# 
-# # table(analytical_preopv2$SurgeryInpatientOrOutpatient_Inpatient , useNA = "ifany")
-# # table(analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient , useNA = "ifany")
-# 
-# saveRDS(analytical_preopv2, paste0(fp_processed,
-#                                        "analytical_preopv2.rds"))
-# # TODO: load to save time 
-# # analytical_preopv2 <- readRDS(paste0(fp_processed, "analytical_preopv2.rds"))
-# 
-# # analytical_preopv2$WoundClass
-# 
-# #analytical_preopv2$blood_cult_comb <- ifelse(analytical_preopv2$`ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)`+
-# #                                                analytical_preopv2$`BLOOD CULTURE`+
-# #                                                analytical_preopv2$`CULTURE ANAEROBIC`>=1,1,0)
-# 
-# #####################################################################################
-# ## Preop rate
-# ## TODO: fit model SSI
-# 
-# fitSSI <- predict(glmSSI, analytical_preopv2, type="response")
-# 
-# analytical_preopv2 <- dummy_cols(analytical_preopv2, select_columns = "windex",remove_selected_columns = FALSE)
-# analytical_preopv2 <- dummy_cols(analytical_preopv2, select_columns = "WoundClass",remove_selected_columns = FALSE)
-# analytical_preopv2 <- dummy_cols(analytical_preopv2, select_columns = "ASA_class_epic_trans",remove_selected_columns = FALSE)
-# 
-# SSI_coef_preop <- tibble(Estimate = glmSSI$coefficients)
-# #SSI_coef_preop
-# analytical_preopv2$pred_prob_SSI_preop <- 1/(1+exp(-(SSI_coef_preop$Estimate[1]+
-#                                                        analytical_preopv2$`WoundClass_Clean Contaminated `*SSI_coef_preop$Estimate[2]+
-#                                                        analytical_preopv2$`WoundClass_Contaminated `*SSI_coef_preop$Estimate[3]+
-#                                                        analytical_preopv2$`WoundClass_Dirty or Infected `*SSI_coef_preop$Estimate[4]+
-#                                                        analytical_preopv2$`PrimarySurgeonSpecialty_Orthopedic Surgery`*SSI_coef_preop$Estimate[5]+
-#                                                        analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*SSI_coef_preop$Estimate[6]+ 
-#                                                        analytical_preopv2$`OS CT BODY COMPARE-NO READ`*SSI_coef_preop$Estimate[7]+
-#                                                        analytical_preopv2$`80`*SSI_coef_preop$Estimate[8]+
-#                                                        analytical_preopv2$comb_560*SSI_coef_preop$Estimate[9]+
-#                                                        analytical_preopv2$blood_cult_comb*SSI_coef_preop$Estimate[10]
-# ))) # no estimate from 7 - 10?
-# 
-# #all.equal(as.numeric(analytical_preopv2$pred_prob_SSI_preop),as.numeric(fitSSI))
-# 
-# ################################################
-# # View(glmUTI)
-# ## TODO: UTI preop
-# test_uti <- analytical_preopv2
-# #table(test_uti$Sex_Male)
-# test_uti$Sex <- ifelse(test_uti$Sex_Male==1,"Male","Female")
-# 
-# fitUTI <- predict(glmUTI, test_uti, type="response")
-# 
-# test_diff <- as.numeric(analytical_preopv2$pred_prob_UTI_preop) - as.numeric(fitUTI)
-# 
-# 
-# analytical_preopv2$pred_prob_UTI_preop <- 1/(1+exp(-(UTI_coef_preop$Estimate[1]+
-#                                                        analytical_preopv2$Sex_Male*UTI_coef_preop$Estimate[2]+
-#                                                        analytical_preopv2$PrimarySurgeonSpecialty_Gynecology*UTI_coef_preop$Estimate[3]+
-#                                                        analytical_preopv2$PrimarySurgeonSpecialty_Urology*UTI_coef_preop$Estimate[4]+
-#                                                        analytical_preopv2$SurgeryInpatientOrOutpatient_Inpatient*UTI_coef_preop$Estimate[5]+
-#                                                        analytical_preopv2$`OS CT BODY COMPARE-NO READ`*UTI_coef_preop$Estimate[6]+
-#                                                        analytical_preopv2$`591`*UTI_coef_preop$Estimate[7])))
-# 
-# ################################################
-# ## TODO: SYSEP preop
-# # View(glmSYSEP)
-# 
-# fitSYSEP <- predict(glmSYSEP, analytical_preopv2, type="response")
-# 
-# analytical_preopv2$pred_prob_SYSEP_preop <- 1/(1+exp(-(SYSEP_coef_preop$Estimate[1]+
-#                                                          analytical_preopv2$`WoundClass_Clean Contaminated `*SYSEP_coef_preop$Estimate[2]+
-#                                                          analytical_preopv2$`WoundClass_Contaminated `*SYSEP_coef_preop$Estimate[3]+
-#                                                          analytical_preopv2$`WoundClass_Dirty or Infected `*SYSEP_coef_preop$Estimate[4]+
-#                                                          analytical_preopv2$ASA_class_epic_trans_3*SYSEP_coef_preop$Estimate[5]+
-#                                                          analytical_preopv2$ASA_class_epic_trans_4or5*SYSEP_coef_preop$Estimate[6]+
-#                                                          analytical_preopv2$`PrimarySurgeonSpecialty_Orthopedic Surgery`*SYSEP_coef_preop$Estimate[7]+
-#                                                          analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*SYSEP_coef_preop$Estimate[8]+
-#                                                          analytical_preopv2$`567`*SYSEP_coef_preop$Estimate[9]+
-#                                                          analytical_preopv2$`994`*SYSEP_coef_preop$Estimate[10]
-# )))
-# 
-# # all.equal(as.numeric(analytical_preopv2$pred_prob_SYSEP_preop),as.numeric(fitSYSEP))
-# test_diff <- as.numeric(analytical_preopv2$pred_prob_SYSEP_preop) - as.numeric(fitSYSEP)
-# 
-# # table(analytical_preopv2$SurgeryInpatientOrOutpatient, useNA = "ifany")
-# 
-# # table(analytical_preopv2$`PrimarySurgeonSpecialty_Orthopedic Surgery`, 
-# #       useNA = "ifany")
-# 
-# 
-# # table(analytical_preopv2$ASA_class_epic_trans , useNA = "ifany")
-# 
-# # table(analytical_preopv2$`OS CT BODY COMPARE-NO READ`, useNA = "ifany")
-# # table(analytical_preopv2$`80`, useNA = "ifany")
-# # table(analytical_preopv2$comb_560, useNA = "ifany")
-# 
-# ################################################
-# ## TODO: PNEU preop
-# # View(glmPNEU)
-# fitPNEU <- predict(glmPNEU, analytical_preopv2, type="response")
-# 
-# 
-# analytical_preopv2$pred_prob_PNEU_preop <- 1/(1+exp(-(PNEU_coef_preop$Estimate[1]+
-#                                                         analytical_preopv2$`windex_1-2`*PNEU_coef_preop$Estimate[2]+
-#                                                         analytical_preopv2$`windex_>=3`*PNEU_coef_preop$Estimate[3]+
-#                                                         analytical_preopv2$ASA_class_epic_trans_3*PNEU_coef_preop$Estimate[4]+
-#                                                         analytical_preopv2$ASA_class_epic_trans_4or5*PNEU_coef_preop$Estimate[5]+
-#                                                         analytical_preopv2$SurgeryInpatientOrOutpatient_Outpatient*PNEU_coef_preop$Estimate[6]+
-#                                                         analytical_preopv2$`150`*PNEU_coef_preop$Estimate[7]+
-#                                                         analytical_preopv2$`480`*PNEU_coef_preop$Estimate[8]+
-#                                                         analytical_preopv2$`501`*PNEU_coef_preop$Estimate[9]
-# )))
-# #all.equal(as.numeric(analytical_preopv2$pred_prob_PNEU_preop),as.numeric(fitPNEU))
-# test_diff <- as.numeric(analytical_preopv2$pred_prob_PNEU_preop) - as.numeric(fitPNEU)
-# 
-# ################################################################################
-# ####### TODO: SAVE preop pred_prob
-# # saveRDS(ICD10_uni_surg_id_spec, paste0(fp_processed,
-# #                                        "ICD10_uni_surg_id_spec.rds"))
-# 
-# # View(analytical_preopv2)
-# # sum(is.na(analytical_preopv2$pred_prob_SSI_preop ))
-# # sum(is.na(analytical_preopv2$pred_prob_UTI_preop))
-# # sum(is.na(analytical_preopv2$pred_prob_SYSEP_preop ))
-# # sum(is.na(analytical_preopv2$pred_prob_PNEU_preop))
-# 
-# write.csv(analytical_preopv2,
-#           file = paste0(fp_processed, "preop_expected_rate.csv"),
-#                       row.names=FALSE)
-# 
-# ################################################################################
-# 
-# 
-# ###############################################################################
-# ######### TODO: # Postop rate
-# 
-# diag_pred <-final_data_store_diag_postop
-# lab_pred <- final_data_store_lab_postop
-# medi_pred <- final_data_store_medi_postop
-# 
-# Epic_data_sub <- Epic_data[,c("SurgeryID","arb_person_id","PrimarySurgeonSpecialty")]
-# 
-# analytical_postop <- merge(Epic_data_sub,diag_pred)
-# analytical_postopv <- merge(analytical_postop,medi_pred)
-# # Warning message:
-# # In merge.data.frame(analytical_postopv, lab_pred, by = c("SurgeryID",  :
-# #  column names ‘EpicCptCode.x’, ‘OmopCptCode.x’, ‘OmopHcpcsCode.x’, 
-# #  ‘EpicCptCode.y’, ‘OmopCptCode.y’, ‘OmopHcpcsCode.y’ are duplicated in the result
-#  
-# analytical_postopv2 <- merge(analytical_postopv,lab_pred,
-#                          by = c("SurgeryID","arb_person_id", "arb_encounter_id"))
-# 
-# # analytical_postopv2$`80` <- analytical_postopv2$phecode_80
-# # colnames(analytical_postopv2)
-# analytical_postopv2$comb_599 <- ifelse(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==599)])>=1,1,0)
-# analytical_postopv2$comb_592 <- ifelse(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==592)])>=1,1,0)
-# analytical_postopv2$comb_540 <- ifelse(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==540)])>=1,1,0)
-# analytical_postopv2$comb_994 <- ifelse(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==994)])>=1,1,0)
-# analytical_postopv2$comb_480 <- ifelse(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==480)])>=1,1,0)
-# 
-# # ANAEROBIC CULTURE
-# # TODO: combine more cultures as 2024 
-# 
-# blood_cultures_to_combine <- grep("BLOOD", 
-#                                   colnames(analytical_postopv2)[which(colnames(analytical_postopv2) 
-#                                                                       == "80"): ncol(analytical_postopv2)],
-#                                   value = TRUE)
-# # can't subset columns not exist
-# blood_cultures_to_combine <- c(blood_cultures_to_combine, 
-#                                # "CULTURE ANAEROBIC", "ANAEROBIC CULTURE",
-#                                "ANAEROBIC CULTURE, (EG:TISSUE, ABSCESS, WOUND, SINUS, ETC.)")
-# blood_cultures_to_combine <- blood_cultures_to_combine[!blood_cultures_to_combine
-#                                    %in% c("ARTERIAL BLOOD GAS", "VENOUS BLOOD GAS")]
-# 
-# message(blood_cultures_to_combine)
-# 
-# # cultures_to_combine
-# 
-# analytical_postopv2$blood_cult_comb <- ifelse(rowSums(analytical_postopv2[,
-#                                       blood_cultures_to_combine])>=1,1,0)
-# 
-# 
-# urine_cultures_to_combine <- grep("URINE CULTURE", 
-#                             colnames(analytical_postopv2)[which(colnames(analytical_postopv2) 
-#                                                                == "80"): ncol(analytical_postopv2)],
-#                             value = TRUE)
-# 
-# urine_cultures_to_combine <- c(urine_cultures_to_combine,
-#                                "UA DIPSTICK W/ REFLEX TO MICROSCOPIC EXAM IF IND (NO CULTURE REFLEX, EXCEPT EPH)",
-#                                "UA COMPLETE URINALYSIS (NO CULTURE REFLEX)")
-# message(urine_cultures_to_combine)
-# 
-# analytical_postopv2$Urine_cult_comb <- ifelse(rowSums(analytical_postopv2[,
-#                                       urine_cultures_to_combine])>=1,1,0)
-# 
-# # TODO: double check if CDIFFICILE TOXIN PCR exists 
-# # TODO: CDIFFICILE
-# # TODO: string search LabPanelName analytical_postopv2$c_diff_comb*UTI_coef_postop$x[7]+
-# # There is one patient since 20240101, has labpanelname  CDIFFICILE TOXIN PCR
-# # analytical_postopv2$c_diff_comb <- ifelse(analytical_postopv2$`CDIFFICILE TOXIN PCR`>=1,1,0)
-# 
-# # table(df_CDIFF_search$LabPanelName) %>% names()
-# # [1] "C DIFF GDH/TOXIN"                                 "C DIFFICILE BY PCR"                              
-# # [3] "C DIFFICILE TOXIN/GDH"                            "CDIFFICILE TOXIN PCR"                            
-# # [5] "LAB USE ONLY - C.DIFFICILE TOXIN REFLEX"          "LAB USE ONLY - C.DIFFICILE TOXIN REFLEX (GI PCR)"
-# 
-# CDIFFs_to_combine <- grep("DIFF", colnames(analytical_postopv2)[which(colnames(analytical_postopv2) 
-#                                           == "80"): ncol(analytical_postopv2)],
-#                                   value = TRUE) %>%
-#                  grep("CBC", ., invert = TRUE, value = TRUE)
-# 
-# message(CDIFFs_to_combine)
-# 
-# # sum(analytical_postopv2[, CDIFFs_to_combine])
-# 
-# analytical_postopv2$c_diff_comb <- ifelse(rowSums(analytical_postopv2[,
-#                                           CDIFFs_to_combine, drop = FALSE])>=1,1,0)
-# 
-# # sum(analytical_postopv2$c_diff_comb)
-# 
-# analytical_postopv2$CBC_auto_diff_comb <- ifelse(analytical_postopv2$`CBC NO AUTO DIFF`+ 
-#                                                    analytical_postopv2$`CBC WITH AUTO DIFF`+analytical_postopv2$`CBC WITH MANUAL DIFF IF AUTO FAILS (PERFORMABLE)`>=1,1,0)
-# 
-# analytical_postopv2$respiratory_comb <- ifelse(analytical_postopv2$`RESPIRATORY CULTURE`>=1,1,0)
-# 
-# # Prob
-# analytical_postopv2$BLOOD_GASES_comb <- ifelse(analytical_postopv2$`ARTERIAL BLOOD GAS`+
-#                                                  analytical_postopv2$`VENOUS BLOOD GAS`>=1,1,0)
-# 
-# saveRDS(analytical_postopv2, paste0(fp_processed,
-#                                    "analytical_postopv2.rds"))
-# # SSI_coef_postop
-# ########################################################################
-# ## TODO: pred_prob_SSI
-# analytical_postopv2$pred_prob_SSI <- 1/(1+exp(-(SSI_coef_postop$x[1]+
-#                                                   analytical_postopv2$`80`*SSI_coef_postop$x[2]+
-#                                                   analytical_postopv2$`1011`*SSI_coef_postop$x[3]+
-#                                                   analytical_postopv2$AntiBiotics_YN*SSI_coef_postop$x[4]+
-#                                                   analytical_postopv2$blood_cult_comb*SSI_coef_postop$x[5])))
-# 
-# ########################################################################
-# ## TODO: pred_prob_UTI
-# analytical_postopv2$pred_prob_UTI <- 1/(1+exp(-(UTI_coef_postop$x[1]+
-#                                                   analytical_postopv2$`590`*UTI_coef_postop$x[2]+
-#                                                   analytical_postopv2$`591`*UTI_coef_postop$x[3]+
-#                                                   analytical_postopv2$`592`*UTI_coef_postop$x[4]+
-#                                                   analytical_postopv2$AntiBiotics_YN*UTI_coef_postop$x[5]+
-#                                                   analytical_postopv2$Urine_cult_comb*UTI_coef_postop$x[6]+
-#                                                   # Problem 
-#                                                   analytical_postopv2$c_diff_comb*UTI_coef_postop$x[7]+
-#                                                   analytical_postopv2$comb_599*UTI_coef_postop$x[8])))
-# 
-# ########################################################################
-# ## TODO: pred_prob_SYSEP
-# 
-# analytical_postopv2$pred_prob_SYSEP <- 1/(1+exp(-(SYSEP_coef_postop$x[1]+
-#                                                     analytical_postopv2$AntiBiotics_YN*SYSEP_coef_postop$x[2]+
-#                                                     analytical_postopv2$`MAGNESIUM SERUM`*SYSEP_coef_postop$x[3]+
-#                                                     analytical_postopv2$comb_540*SYSEP_coef_postop$x[5]+
-#                                                     analytical_postopv2$comb_994*SYSEP_coef_postop$x[6]+
-#                                                     analytical_postopv2$CBC_auto_diff_comb*SYSEP_coef_postop$x[7]+
-#                                                     analytical_postopv2$blood_cult_comb*SYSEP_coef_postop$x[8])))
-# 
-# ########################################################################
-# ## TODO: pred_prob_PNEU
-# analytical_postopv2$`1013` <- 0
-# analytical_postopv2$pred_prob_PNEU <- 1/(1+exp(-(PNEU_coef_postop$x[1]+
-#                                                    analytical_postopv2$`480`*PNEU_coef_postop$x[2]+
-#                                                    analytical_postopv2$`501`*PNEU_coef_postop$x[3]+
-#                                                    # Problem 
-#                                                    analytical_postopv2$`1013`*PNEU_coef_postop$x[4]+
-#                                                    analytical_postopv2$AntiBiotics_YN*PNEU_coef_postop$x[5]+
-#                                                    analytical_postopv2$`MAGNESIUM SERUM`*PNEU_coef_postop$x[6]+
-#                                                    analytical_postopv2$`VANCOMYCIN TROUGH`*PNEU_coef_postop$x[7]+
-#                                                    analytical_postopv2$respiratory_comb*PNEU_coef_postop$x[8]+
-#                                                    analytical_postopv2$BLOOD_GASES_comb*PNEU_coef_postop$x[9])))
-# 
-# #colnames(analytical_postopv2)
-# #showdf <- analytical_postopv2[,c("SurgeryID","pred_prob_SSI","PrimarySurgeonSpecialty")]
-# Predicted_prob <- analytical_postopv2[,c("SurgeryID","arb_person_id","pred_prob_SSI","pred_prob_UTI","pred_prob_SYSEP","pred_prob_PNEU","PrimarySurgeonSpecialty.x")]
-# 
-# #View(Predicted_prob)
-# colnames(Predicted_prob) <- c("SurgeryID","arb_person_id","pred_prob_SSI_postop","pred_prob_UTI_postop","pred_prob_SYSEP_postop","pred_prob_PNEU_postop","PrimarySurgeonSpecialty_raw")
-# #rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==599)])
-# #table(analytical_postopv2$comb_599 )
-# #table(rowSums(analytical_postopv2[,which(substring(colnames(analytical_postopv2),1,3)==599)]))
-# 
-# # glimpse(Predicted_prob)
-# ################################################################################
-# ###### postop_observed_rate
-# write.csv(Predicted_prob,
-#           file = paste0(fp_processed, "postop_observed_rate.csv"),
-#           row.names=FALSE)
 
 

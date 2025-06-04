@@ -4,18 +4,22 @@
 # data in shared drive 
 # \\data.ucdenver.pvt\dept\SOM\ACCORDS\Data\ACCORDSGPUHDCDATA
 
+# TODO: a parameter
+years <- c("2021", "2022", "2023", "2024")
 # year, date and time related variables
-year_w <- 2024
+# TODO: a parameter
+year_w <- 2025
  # date_str <- "20240911"
 # date_str <- "20241121"
-date_str <- "20250203"
+date_str <- "20250520"
 # date_str <- "20241219"
 # date_str <- "20241031"
 
 # save_date_str <- "20241031_2023"
 # save_date_str <- "20241031"
 # save_date_str <- "20241219"
-save_date_str <- "20250203_2024"
+# TODO: a parameter
+save_date_str <- "20250520"
 # file path related variables 
 fp_processed <- paste0("../processed_data/", save_date_str, "/")
 
