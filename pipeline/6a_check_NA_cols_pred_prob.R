@@ -18,8 +18,14 @@ library(gtsummary)
 
 source("./global_vars.R")
 
-# load 2021 - 2024 
+# years should be 
+# load 2021 - 2024 data, predictive probability and all predictors 
+fp_base_dir <- paste0("../processed_data/")
+years_date_str <- "20250203"
+df_all_var_prob <- read_csv(file.path(fp_base_dir, years_date_str, "Aspin_all_complications_pred_prob_20212024.csv"))
+# dim(df_all_var_prob)
 
+df_all_var_prob %>% dplyr::select(arb_person_id) %>% dplyr::distinct(arb_person_id) %>% dplyr::pull(arb_person_id) %>% length()
 # 
 pre_op_missing_cols <- c(
   "OS CT BODY COMPARE-NO READ",

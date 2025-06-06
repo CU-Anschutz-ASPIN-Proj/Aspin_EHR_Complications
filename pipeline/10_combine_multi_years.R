@@ -37,7 +37,7 @@ processed_data_dir_comb <- file.path(parent_dir, "processed_data", date_str)
 # -----------------------------------------
 
 fp_base_dir <- paste0("../processed_data/")
-
+years_date_str <- "20250203"
 # --- Initialize lists to store data from each year ---
 list_datpost <- list()
 list_datpre <- list()
@@ -46,7 +46,7 @@ sizes_year <- numeric() # Using a named numeric vector
 
 # --- Loop through years to read and collect data ---
 for (year_val in years) {
-  current_year_folder <- paste0(date_str, "_", year_val)
+  current_year_folder <- paste0(years_date_str, "_", year_val)
   current_fp_processed <- file.path(fp_base_dir, current_year_folder)
   
   cat("Processing year:", year_val, "\n")
@@ -113,7 +113,7 @@ if (nrow(datpre) > 0 || nrow(datpost) > 0) {
   
   pre_cols_ok <- all(required_merge_cols %in% names(datpre))
   post_cols_ok <- all(required_merge_cols %in% names(datpost))
-  
+  # TODO: check, this merge step increases total nrow
   if(pre_cols_ok && post_cols_ok){
     dat5 <- merge(datpre, datpost,
                   by = required_merge_cols, all = TRUE)

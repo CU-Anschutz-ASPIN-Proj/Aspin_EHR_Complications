@@ -1,0 +1,223 @@
+---
+title: "Explore Temperature Variables"
+author: "Aspin Analytical Team"
+date: last-modified
+execute: 
+  warning: false
+  echo: false
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-title: "Jump To"
+    highlight-style: github
+    code-line-numbers: true
+    page-layout: article
+    embed-resources: true
+editor: source
+---
+
+```{r}
+#| label: libraries
+#| include: false
+
+## set up workspace
+rm(list = ls())
+
+library(gt)       # html table 
+library(knitr)
+library(gtsummary)
+library(visdat) # missingness pattern
+library(bit64)
+library(questionr)
+library(lubridate) 
+library(here) 
+library(naniar) # missingness summary
+library(tidyverse)
+library(magrittr)
+
+# helper functions
+# source("./basic.R")      
+# source("./helper.R") 
+
+```
+
+
+```{r}
+#| label: global_vars_data
+#| include: false
+
+source("./global_vars.R")
+
+fp_base_dir <- paste0("../processed_data/")
+
+years_date_str <- "20250203"
+
+years_date_str2 <- "20250305"
+
+dedup_list_year <- read_csv(paste0(fp_processed,
+                         "dedup_pts_list_years.csv"))
+# dim(dedup_list_year)
+
+# -----------------------------------------
+# load old table 6 surgery table which does not have temperature variables 
+
+table6_notemp1 <- read_csv(paste0("../data/", years_date_str, "/", 
+                fp_prefix, "Table6_Surgery_", years_date_str, ".csv"))
+
+table6_notemp1 %<>% mutate(DOS = as.Date(SurgeryDate),
+                          year = year(DOS))
+
+table6_notemp2 <- read_csv(paste0("../data/", years_date_str2, "/", 
+                                  fp_prefix, "Table6_Surgery_", years_date_str2, ".csv"))
+
+table6_notemp2 %<>% mutate(DOS = as.Date(SurgeryDate),
+                           year = year(DOS))
+
+table6 <- read_csv(fp_tab6)
+# problems(table6)
+
+table6 %<>% mutate(DOS = as.Date(SurgeryDate),
+                   year = year(DOS))
+
+temp_vars <- c("firstpostprocedurecoretemperature",
+               "highestcoretemperatureduringprocedure",
+               "highesttempnearanesthesiastop",
+               "AnesthesiaTemp")
+
+table6 %<>% dplyr::rename(AnesthesiaTemp = AnesthesisaTemp)
+# temp vars in each table 
+assign(paste0("temp_var_", years_date_str),
+colnames(table6_notemp1)[grepl("temp", colnames(table6_notemp1), ignore.case = TRUE)])
+
+assign(paste0("temp_var_", years_date_str2),
+colnames(table6_notemp2)[grepl("temp", colnames(table6_notemp2), ignore.case = TRUE)])
+
+assign(paste0("temp_var_", date_str),
+colnames(table6)[grepl("temp", colnames(table6), ignore.case = TRUE)] )
+```
+
+# Temp Variables Included in Each Data Batch
+
+```{r}
+#| label: explore
+
+# Get all unique variable names
+all_vars <- unique(c(temp_var_20250203, temp_var_20250305, temp_var_20250520))
+
+# Create a data frame for the summary table
+summary_df <- tibble(
+  `Variable Name` = all_vars
+) %>%
+  mutate(
+    `Variable Category` = case_when(
+      grepl("Pacu|FollowUp", `Variable Name`) ~ "PACU / Follow-Up",
+      grepl("core|procedure|stop", `Variable Name`) ~ "Core / Procedural",
+      grepl("Anesthesia", `Variable Name`) ~ "Anesthesia",
+      TRUE ~ "Other"
+    ),
+    `2025-02-03` = ifelse(`Variable Name` %in% temp_var_20250203, "✔️", ""),
+    `2025-03-05` = ifelse(`Variable Name` %in% temp_var_20250305, "✔️", ""),
+    `2025-05-20` = ifelse(`Variable Name` %in% temp_var_20250520, "✔️", "")
+  ) %>%
+  # Reorder columns for presentation
+  select(`Variable Category`, `Variable Name`, `2025-02-03`, `2025-03-05`, `2025-05-20`) %>%
+  # Arrange by category and name for neatness
+  arrange(`Variable Category`, `Variable Name`)
+
+kable(summary_df, caption = "Presence of Temperature Variables by Delivery Date")
+```
+
+
+# 20250520 HDC data
+
+```{r}
+#| label: explore1
+#| 
+table6 %>% tbl_summary(by = year, 
+     include = all_of(temp_vars),
+     statistic = list(all_categorical() ~ "{n} ({p}%)",
+                      all_continuous() ~ c(
+                        "{N_nonmiss}",
+                        "{median} ({p25}, {p75})",
+                        "{min}, {mean} ({sd}), {max}"
+                      )),
+     digits = all_continuous() ~ 3,
+     missing_text = "(Missing)",
+     type = list(all_continuous() ~ "continuous2",
+                 all_dichotomous() ~ "categorical")) %>% 
+  bold_labels()
+
+table6 %>% tbl_summary(by = year, 
+     include = all_of(temp_var_20250520),
+     statistic = list(all_categorical() ~ "{n} ({p}%)",
+                      all_continuous() ~ c(
+                        "{N_nonmiss}",
+                        "{median} ({p25}, {p75})",
+                        "{min}, {mean} ({sd}), {max}"
+                      )),
+     digits = all_continuous() ~ 3,
+     missing_text = "(Missing)",
+     type = list(all_continuous() ~ "continuous2",
+                 all_dichotomous() ~ "categorical")) %>% 
+  bold_labels()
+```
+
+
+# 20250305 HDC data
+
+```{r}
+#| label: explore2
+
+
+table6_notemp2 %>% tbl_summary(by = year, 
+     include = all_of(temp_vars[1:3]),
+     statistic = list(all_categorical() ~ "{n} ({p}%)",
+                      all_continuous() ~ c(
+                        "{N_nonmiss}",
+                        "{median} ({p25}, {p75})",
+                        "{min}, {mean} ({sd}), {max}"
+                      )),
+     digits = all_continuous() ~ 3,
+     missing_text = "(Missing)",
+     type = list(all_continuous() ~ "continuous2",
+                 all_dichotomous() ~ "categorical")) %>% 
+  bold_labels()
+
+table6_notemp2 %>% tbl_summary(by = year, 
+     include = all_of(temp_var_20250305),
+     statistic = list(all_categorical() ~ "{n} ({p}%)",
+                      all_continuous() ~ c(
+                        "{N_nonmiss}",
+                        "{median} ({p25}, {p75})",
+                        "{min}, {mean} ({sd}), {max}"
+                      )),
+     digits = all_continuous() ~ 3,
+     missing_text = "(Missing)",
+     type = list(all_continuous() ~ "continuous2",
+                 all_dichotomous() ~ "categorical")) %>% 
+  bold_labels()
+```
+
+
+# 20250203 HDC data
+
+```{r}
+#| label: explore3
+#| 
+
+table6_notemp1 %>% tbl_summary(by = year, 
+     include = all_of(temp_var_20250203),
+     statistic = list(all_categorical() ~ "{n} ({p}%)",
+                      all_continuous() ~ c(
+                        "{N_nonmiss}",
+                        "{median} ({p25}, {p75})",
+                        "{min}, {mean} ({sd}), {max}"
+                      )),
+     digits = all_continuous() ~ 3,
+     missing_text = "(Missing)",
+     type = list(all_continuous() ~ "continuous2",
+                 all_dichotomous() ~ "categorical")) %>% 
+  bold_labels()
+```
+
