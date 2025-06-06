@@ -21,12 +21,12 @@ lab_positive2 <- lab_positive[lab_positive$ind_positive==1,]
 lab <- lab_positive2[,-ncol(lab_positive2)]"    
 
 4. - [x] Yi to change code to more pipeline format as "Aspin 2025 infectious Complication pipeline"    
-5. - [ ] Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications.    
-6. - [ ] Guannan run this pipeline with 2024 HDC data, to compare infectious part with Aspin reports results (Guannan Previous), compare with the non infectious part (Yi previous results). Compare predictive probabilities.    
-7. - [ ] Table 1, patients characteristics, Age Mean(SD); Sex Female, male; Race; Ethnicity  
-8. - [ ] Table 2,  incidence rate and O/E
-9. - [ ] Two Figures, one combined incidence rate, one O/E, reuse code
-10. - [ ] Optimize lists to filter LabPanelName, ProcedureName, PharmaceuticalClass, as for now, add unique() and try to add as many as possible.
+5. - [x] Double check, Misha May Paper, use the same "ICD10_uni_surg_id_spec.rds" (20250203_2024) helper datafile, run 2024 thoracic 13 complications.    
+6. - [x] Guannan run this pipeline with 2024 HDC data, to compare infectious part with Aspin reports results (Guannan Previous), compare with the non infectious part (Yi previous results). Compare predictive probabilities.    
+7. - [x] Table 1, patients characteristics, Age Mean(SD); Sex Female, male; Race; Ethnicity  
+8. - [x] Table 2,  incidence rate and O/E
+9. - [x] Two Figures, one combined incidence rate, one O/E, reuse code
+10. - [x] Optimize lists to filter LabPanelName, ProcedureName, PharmaceuticalClass, as for now, add unique() and try to add as many as possible.
 
 ## Naming Convention 
 
